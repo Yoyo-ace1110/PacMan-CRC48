@@ -1,0 +1,2 @@
+windeployqt6.exe
+windeployqt6.exe CRC48-PacMan.exe
