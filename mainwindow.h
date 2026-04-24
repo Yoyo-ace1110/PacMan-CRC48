@@ -20,6 +20,39 @@ enum class Tile : uint8_t {
     wall = 1  // 不可通過的牆壁
 };
 
+class PacMan {
+private:
+    enum class Direc : uint8_t {
+        right = 0,
+        left = 1,
+        up = 2,
+        down = 3
+    }
+    Direc direction = Direc::right;
+    size_t x = 1ULL, y = 1ULL;
+public:
+    inline PacMan() {}
+
+    inline void set_direction(Direc x) {
+        direction = x;
+    }
+
+    inline void update() {
+        if (direction == Direc::right) {
+            x += 1;
+        }
+        else if (direction == Direc::left) {
+            x -= 1;
+        }
+        else if (direction == Direc::up) {
+            y += 1;
+        }
+        else if (direction == Direc::down) {
+            y -= 1;
+        }
+    }
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
