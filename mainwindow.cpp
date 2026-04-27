@@ -33,7 +33,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     } else throw std::runtime_error("qss not found!");
     // 繪製到螢幕視窗
     this->update();
-    debug_print_map();
 }
 
 MainWindow::~MainWindow() {
