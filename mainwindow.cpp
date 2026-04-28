@@ -5,12 +5,15 @@
 #include <QFile>     // QFile
 #include <windows.h> // system
 
+MainWindow::~MainWindow() {delete ui;}
+
+// 繪製一幀的畫面
 void MainWindow::paintEvent(QPaintEvent *event) {
     QPainter painter(this);
-    painter.fillRect(this->rect(), Qt::black);
     draw_map(painter);
 }
 
+// 主視窗的初始化
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
     ui->centralwidget->setAttribute(Qt::WA_TranslucentBackground);
@@ -33,8 +36,4 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     } else throw std::runtime_error("qss not found!");
     // 繪製到螢幕視窗
     this->update();
-}
-
-MainWindow::~MainWindow() {
-    delete ui;
 }

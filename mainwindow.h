@@ -1,7 +1,6 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <map>         // std::map
 #include <array>       // std::array
 #include <cstdint>     // size_t
 #include <fstream>     // 操作檔案
@@ -10,97 +9,139 @@
 #include <QPainter>    // 畫筆工具
 #include <QKeyEvent>   // 鍵盤工具
 
-using size_t  = std::size_t ;
+using size_t  = std::size_t;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 QT_END_NAMESPACE
 
-enum class Tile : uint8_t {
-    flat = 0, // 可以通過的空地
-    wall = 1  // 不可通過的牆壁
-};
-
-static constexpr int tile_size = 30;
-// 初始化地圖
-static constexpr size_t map_width = 18ULL, map_height = 15ULL;
-using MapType = std::array<std::array<Tile, map_width>, map_height>;
-inline MapType map;
-
-struct Pos {
-    int x, y;
-    inline Pos(const Pos& other) noexcept {
-        x = other.x;
-        y = other.y;
-    }
-    inline Pos(int _x_, int _y_) noexcept : x(_x_), y(_y_) {}
-    inline Pos& operator = (const Pos& other) noexcept {
-        x = other.x;
-        y = other.y;
-        return (*this);
-    }
-    // 算術運算子
-    inline Pos& operator += (const Pos& other) noexcept {
-        x += other.x;
-        y += other.y;
-        return (*this);
-    }
-    inline Pos& operator -= (const Pos& other) noexcept {
-        x -= other.x;
-        y -= other.y;
-        return (*this);
-    }
-    friend inline Pos operator + (const Pos& lhs, const Pos& rhs) noexcept {
-        return Pos(lhs.x + rhs.x, lhs.y + rhs.y);
-    }
-    friend inline Pos operator - (const Pos& lhs, const Pos& rhs) noexcept {
-        return Pos(lhs.x - rhs.x, lhs.y - rhs.y);
-    }
-};
-
-class PacMan {
-private:
-    enum class Direc : uint8_t {
-        none  = 0,
-        right = 1,
-        left  = 2,
-        up    = 3,
-        down  = 4,
-    };
-    Direc direction = Direc::none;
-    Pos position{1, 1};
-public:
-    // 對照表
-    std::map<Direc, Pos> moves = {
-        {Direc::none , Pos(+0, +0)},
-        {Direc::left , Pos(-1, +0)},
-        {Direc::right, Pos(+1, +0)},
-        {Direc::up   , Pos(+0, +1)},
-        {Direc::down , Pos(+0, -1)},
-    };
-    // 建構子
-    inline PacMan() noexcept {}
-    inline void set_direction(Direc direc) {
-        direction = direc;
-    }
-    inline Tile& get_tile(Pos pos) {
-        if (pos.x < 0 || pos.y < 0) throw std::out_of_range("get_tile position out of range");
-        return map[pos.y][pos.x];
-    }
-    inline void update() {
-        Pos destination = position + moves.at(direction);
-        if (get_tile(destination) != Tile::wall) {
-            position = destination;
-        }
-    }
-};
-
 class MainWindow : public QMainWindow {
     Q_OBJECT
+private:
+    Ui::MainWindow *ui;
 public:
+    // constructor
     ~MainWindow();
     MainWindow(QWidget *parent = nullptr);
     void paintEvent(QPaintEvent *event) override;
+
+    // 磚塊資料結構
+    enum class Tile : uint8_t {
+        flat = 0, // 可以通過的空地
+        wall = 1  // 不可通過的牆壁
+    };
+
+    // 初始化地圖
+    static constexpr int tile_size = 30;
+    static constexpr size_t map_width = 18ULL, map_height = 15ULL;
+    using MapType = std::array<std::array<Tile, map_width>, map_height>;
+    MapType map;
+
+    // 位置資料結構
+    struct Pos {
+        int x, y;
+        MainWindow *parent = nullptr;
+        inline Pos(const Pos& other) noexcept
+            : x(other.x), y(other.y), parent(other.parent) {}
+        inline Pos(MainWindow *_parent_, int _x_, int _y_) noexcept
+            : x(_x_), y(_y_), parent(_parent_) {}
+        inline Pos& operator = (const Pos& other) noexcept {
+            x = other.x;
+            y = other.y;
+            return (*this);
+        }
+        // 算術運算子
+        inline Pos& operator += (const Pos& other) noexcept {
+            x += other.x;
+            y += other.y;
+            return (*this);
+        }
+        inline Pos& operator -= (const Pos& other) noexcept {
+            x -= other.x;
+            y -= other.y;
+            return (*this);
+        }
+        friend inline Pos operator + (const Pos& lhs, const Pos& rhs) noexcept {
+            return Pos(lhs.parent, lhs.x + rhs.x, lhs.y + rhs.y);
+        }
+        friend inline Pos operator - (const Pos& lhs, const Pos& rhs) noexcept {
+            return Pos(lhs.parent, lhs.x - rhs.x, lhs.y - rhs.y);
+        }
+        // 利用 Pos 取得 Tile 位置
+        inline Tile& tile() {
+            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
+            if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
+            return parent->map[y][x];
+        }
+    };
+
+    // 物件: 小精靈
+    class PacMan {
+    private:
+        enum class Direc : uint8_t {
+            none  = 0,
+            right = 1,
+            left  = 2,
+            up    = 3,
+            down  = 4,
+        };
+        static constexpr int radius = tile_size * 0.8;
+        // 成員變數
+        MainWindow *parent = nullptr;
+        Direc direction = Direc::none;
+        Pos position = Pos(parent, 1, 1);
+        const int max_angle = 45;
+        int mouth_angle = 0;
+        int angle_step  = 5;
+    public:
+        // 建構子
+        inline PacMan(MainWindow *_parent_) noexcept
+            : parent(_parent_) {}
+        // 成員函數
+        inline void set_direction(Direc direc) {
+            direction = direc;
+        }
+        inline Pos get_move(Direc direc) {
+            switch(direc) {
+                case Direc::left:  return Pos(parent, -1, +0);
+                case Direc::right: return Pos(parent, +1, +0);
+                case Direc::up:    return Pos(parent, +0, -1);
+                case Direc::down:  return Pos(parent, +0, +1);
+                default:           return Pos(parent, +0, +0);
+            }
+        }
+        // 繪製小精靈
+        inline void draw(QPainter& painter, int angle_open) {
+            painter.setRenderHint(QPainter::Antialiasing); // 避免鋸齒狀
+            painter.setBrush(Qt::yellow);               // 黃色圓心
+            painter.setPen(QPen(Qt::black, 1));         // 黑色外框
+            // 計算張開嘴巴的角度
+            mouth_angle += angle_step;
+            if (mouth_angle >= max_angle || mouth_angle <= 0) {
+                angle_step = -angle_step;
+            }
+            int start_angle = (mouth_angle / 2) * 16;    // 扇形始邊
+            int span_angle  = (360 - mouth_angle) * 16;  // 扇形終邊
+            // 繪製黃色扇形
+            int x = position.x-radius;
+            int y = position.y-radius;
+            QRectF rect(x, y, radius*2, radius*2);
+            painter.drawPie(rect, start_angle, span_angle);
+            // 繪製眼睛
+            x = position.x+radius/4;
+            y = position.y+radius/4;
+            painter.setBrush(Qt::black);
+            painter.drawEllipse(x, y, radius/4, radius/4);
+        }
+        // 更新狀態並繪製
+        inline void update() {
+            Pos destination = position + get_move(direction);
+            if (destination.tile() != Tile::wall) {
+                position = destination;
+            }
+        }
+    };
+
     // 讀取檔案 file_path 作為地圖
     bool load_map(const std::string& file_path) {
         // 嘗試讀取地圖檔案
@@ -132,20 +173,12 @@ public:
                 int x = col * tile_size;
                 int y = row * tile_size;
                 // 繪製該格
-                if (map[row][col] == Tile::wall) {
-                    // 畫牆壁
-                    painter.setBrush(Qt::blue); // 深藍填充
-                } else {
-                    // 畫平地
-                    painter.setBrush(Qt::black);
-                }
+                painter.setBrush(map[row][col] == Tile::wall ? Qt::blue : Qt::black);
                 painter.setPen(QPen(Qt::NoPen));
                 painter.drawRect(x, y, tile_size, tile_size);
             }
         }
     }
-private:
-    Ui::MainWindow *ui;
 };
 
 #endif // MAINWINDOW_H
