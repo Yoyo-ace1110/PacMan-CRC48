@@ -61,20 +61,24 @@ struct Pos {
 class PacMan {
 private:
     enum class Direc : uint8_t {
-        right = 0,
-        left = 1,
-        up = 2,
-        down = 3
+        none  = 0,
+        right = 1,
+        left  = 2,
+        up    = 3,
+        down  = 4,
     };
-    Direc direction = Direc::right;
+    Direc direction = Direc::none;
     Pos position{1, 1};
 public:
+    // 對照表
     std::map<Direc, Pos> moves = {
+        {Direc::none , Pos(+0, +0)},
         {Direc::left , Pos(-1, +0)},
         {Direc::right, Pos(+1, +0)},
         {Direc::up   , Pos(+0, +1)},
         {Direc::down , Pos(+0, -1)},
     };
+    // 建構子
     inline PacMan() noexcept {}
     inline void set_direction(Direc direc) {
         direction = direc;
