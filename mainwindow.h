@@ -4,12 +4,12 @@
 #include <array>       // std::array
 #include <cstdint>     // size_t
 #include <fstream>     // 操作檔案
-// #include <iostream>    // std::cout
 #include <QMainWindow> // 主視窗
 #include <QPainter>    // 畫筆工具
 #include <QKeyEvent>   // 鍵盤工具
 
 using size_t  = std::size_t;
+static constexpr int fps = 24;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
@@ -88,11 +88,14 @@ public:
         static constexpr int radius = tile_size * 0.8;
         // 成員變數
         MainWindow *parent = nullptr;
-        Direc direction = Direc::none;
-        Pos position = Pos(parent, 1, 1);
-        const int max_angle = 45;
-        int mouth_angle = 0;
-        int angle_step  = 5;
+        Direc direction = Direc::none;      // 移動方向
+        Pos position  = Pos(parent, 1, 1);  // 地圖位置
+        Pos pixel_pos = Pos(parent, 1, 1);  // 像素位置
+        const int max_angle = 45;   // 最大張嘴角度
+        const int speed = 6;        // 每秒移動的格子數
+        int mouth_angle = 0;        // 當前張嘴角度
+        int angle_step  = 5;        // 每次的角位移
+        int count = 0;              // 計數器
     public:
         // 建構子
         inline PacMan(MainWindow *_parent_) noexcept
@@ -135,10 +138,15 @@ public:
         }
         // 更新狀態並繪製
         inline void update() {
-            Pos destination = position + get_move(direction);
-            if (destination.tile() != Tile::wall) {
-                position = destination;
+            if (count % (fps/speed) == 0) {
+                // 嘗試前進一格
+                Pos destination = position + get_move(direction);
+                if (destination.tile() != Tile::wall) {
+                    position = destination;
+                }
             }
+            this->draw();
+            count = (count+1) & 1023; // 避免 overflow
         }
     };
 
