@@ -67,6 +67,13 @@ public:
         friend inline Pos operator - (const Pos& lhs, const Pos& rhs) noexcept {
             return Pos(lhs.parent, lhs.x - rhs.x, lhs.y - rhs.y);
         }
+        // 比較運算子
+        friend inline bool operator == (const Pos& lhs, const Pos& rhs) noexcept {
+            return (lhs.x == rhs.x && lhs.y == rhs.y);
+        }
+        friend inline bool operator != (const Pos& lhs, const Pos& rhs) noexcept {
+            return (lhs.x != rhs.x || lhs.y != rhs.y);
+        }
         // 利用 Pos 取得 Tile 位置
         inline Tile& tile() {
             bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
@@ -85,21 +92,23 @@ public:
             up    = 3,
             down  = 4,
         };
-        static constexpr int radius = tile_size * 0.8;
+        static constexpr int radius = tile_size * 0.4;
         // 成員變數
         MainWindow *parent = nullptr;
-        Direc direction = Direc::none;      // 移動方向
-        Pos position  = Pos(parent, 1, 1);  // 地圖位置
-        Pos pixel_pos = Pos(parent, 1, 1);  // 像素位置
+        Direc direction = Direc::none;     // 移動方向
+        Pos position = Pos(parent, 1, 1);  // 地圖位置
         const int max_angle = 45;   // 最大張嘴角度
         const int speed = 6;        // 每秒移動的格子數
         int mouth_angle = 0;        // 當前張嘴角度
         int angle_step  = 5;        // 每次的角位移
-        int count = 0;              // 計數器
+        int count = 1;              // 計數器
     public:
         // 建構子
-        inline PacMan(MainWindow *_parent_) noexcept
-            : parent(_parent_) {}
+        inline PacMan() noexcept {}
+        inline void init(MainWindow *_parent_) {
+            parent = _parent_;
+            position.parent = _parent_;
+        }
         // 成員函數
         inline void set_direction(Direc direc) {
             direction = direc;
@@ -114,41 +123,52 @@ public:
             }
         }
         // 繪製小精靈
-        inline void draw(QPainter& painter, int angle_open) {
-            painter.setRenderHint(QPainter::Antialiasing); // 避免鋸齒狀
-            painter.setBrush(Qt::yellow);               // 黃色圓心
-            painter.setPen(QPen(Qt::black, 1));         // 黑色外框
+        inline void draw(QPainter& painter, const Pos& move) {
+            // 設定前進比例
+            double ratio = count * (static_cast<double>(speed)/fps);
+            // 渲染相關設定
+            painter.setRenderHint(QPainter::Antialiasing);  // 避免鋸齒狀
+            painter.setBrush(Qt::yellow);                   // 黃色圓心
+            painter.setPen(QPen(Qt::black, 1));             // 黑色外框
             // 計算張開嘴巴的角度
             mouth_angle += angle_step;
             if (mouth_angle >= max_angle || mouth_angle <= 0) {
                 angle_step = -angle_step;
             }
-            int start_angle = (mouth_angle / 2) * 16;    // 扇形始邊
-            int span_angle  = (360 - mouth_angle) * 16;  // 扇形終邊
+            int base_angle;
+            if (move.x == 0 && move.y == 0)     base_angle = 0;     // 預設向右
+            else if (move.x > 0 && move.y == 0) base_angle = 0;     // 右
+            else if (move.x < 0 && move.y == 0) base_angle = 180;   // 左
+            else if (move.y < 0 && move.x == 0) base_angle = 90;    // 上
+            else if (move.y > 0 && move.x == 0) base_angle = 270;   // 下
+            else throw std::invalid_argument("wrong move");
+            int start_angle = (base_angle + mouth_angle / 2) * 16;
+            int span_angle  = (360 - mouth_angle) * 16;
             // 繪製黃色扇形
-            int x = position.x-radius;
-            int y = position.y-radius;
-            QRectF rect(x, y, radius*2, radius*2);
+            int offset_x = static_cast<double>((move.x * tile_size) * ratio);
+            int offset_y = static_cast<double>((move.y * tile_size) * ratio);
+            int center_x = position.x * tile_size + (tile_size / 2);
+            int center_y = position.y * tile_size + (tile_size / 2);
+            Pos pixel = Pos(parent, center_x + offset_x, center_y + offset_y);
+            QRectF rect(pixel.x-radius, pixel.y-radius, radius*2, radius*2);
             painter.drawPie(rect, start_angle, span_angle);
-            // 繪製眼睛
-            x = position.x+radius/4;
-            y = position.y+radius/4;
-            painter.setBrush(Qt::black);
-            painter.drawEllipse(x, y, radius/4, radius/4);
         }
         // 更新狀態並繪製
-        inline void update() {
-            if (count % (fps/speed) == 0) {
+        inline void update(QPainter& painter) {
+            Pos move = get_move(direction);
+            if (count == 0) {
                 // 嘗試前進一格
-                Pos destination = position + get_move(direction);
+                Pos destination = position + move;
                 if (destination.tile() != Tile::wall) {
                     position = destination;
                 }
             }
-            this->draw();
-            count = (count+1) & 1023; // 避免 overflow
+            this->draw(painter, move);
+            count = (count+1) % (fps/speed); // count 永遠是比例
         }
     };
+
+    PacMan player;
 
     // 讀取檔案 file_path 作為地圖
     bool load_map(const std::string& file_path) {

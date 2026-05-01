@@ -7,12 +7,6 @@
 
 MainWindow::~MainWindow() {delete ui;}
 
-// 繪製一幀的畫面
-void MainWindow::paintEvent(QPaintEvent *event) {
-    QPainter painter(this);
-    draw_map(painter);
-}
-
 // 主視窗的初始化
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
@@ -36,4 +30,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     } else throw std::runtime_error("qss not found!");
     // 繪製到螢幕視窗
     this->update();
+    // 建立小精靈
+    player.init(this);
+}
+
+// 繪製一幀的畫面
+void MainWindow::paintEvent(QPaintEvent *event) {
+    QPainter painter(this);
+    draw_map(painter);
+    player.update(painter);
 }
