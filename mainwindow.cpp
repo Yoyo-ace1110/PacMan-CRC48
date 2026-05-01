@@ -3,6 +3,7 @@
 
 #include <string>    // std::string
 #include <QFile>     // QFile
+#include <QTimer>    // QTimer
 #include <windows.h> // system
 
 MainWindow::~MainWindow() {delete ui;}
@@ -28,10 +29,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         setStyleSheet(temp.readAll());
         file.close();
     } else throw std::runtime_error("qss not found!");
-    // 繪製到螢幕視窗
-    this->update();
-    // 建立小精靈
+    // 設定計時器
+    timer = new QTimer(this); // 連接到視窗更新
+    connect(timer, &QTimer::timeout, this, QOverload<>::of(&MainWindow::update));
+    timer->start(1000 / fps); // 每 1/fps 秒更新一次畫面
+    // 建立小精靈 & 繪製到螢幕視窗
     player.init(this);
+    this->update();
 }
 
 // 繪製一幀的畫面

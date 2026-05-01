@@ -9,7 +9,7 @@
 #include <QKeyEvent>   // 鍵盤工具
 
 using size_t  = std::size_t;
-static constexpr int fps = 24;
+static constexpr int fps = 12;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
@@ -19,6 +19,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 private:
     Ui::MainWindow *ui;
+    QTimer *timer; // 計時器
 public:
     // constructor
     ~MainWindow();
@@ -97,10 +98,10 @@ public:
         MainWindow *parent = nullptr;
         Direc direction = Direc::none;     // 移動方向
         Pos position = Pos(parent, 1, 1);  // 地圖位置
-        const int max_angle = 45;   // 最大張嘴角度
+        const int max_angle = 72;   // 最大張嘴角度
         const int speed = 6;        // 每秒移動的格子數
         int mouth_angle = 0;        // 當前張嘴角度
-        int angle_step  = 5;        // 每次的角位移
+        int angle_step  = 12;       // 每次張嘴的角位移
         int count = 1;              // 計數器
     public:
         // 建構子
