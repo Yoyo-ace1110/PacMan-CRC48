@@ -9,7 +9,7 @@
 #include <QKeyEvent>   // 鍵盤工具
 
 using size_t  = std::size_t;
-static constexpr int fps = 12;
+static constexpr int fps = 24;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
@@ -25,6 +25,7 @@ public:
     ~MainWindow();
     MainWindow(QWidget *parent = nullptr);
     void paintEvent(QPaintEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
     // 磚塊資料結構
     enum class Tile : uint8_t {
@@ -96,13 +97,33 @@ public:
         static constexpr int radius = tile_size * 0.4;
         // 成員變數
         MainWindow *parent = nullptr;
-        Direc direction = Direc::none;     // 移動方向
+        Direc direction = Direc::none;     // 現在的移動方向
+        Direc direc_buffer = Direc::none;  // 移動方向緩衝區
         Pos position = Pos(parent, 1, 1);  // 地圖位置
         const int max_angle = 72;   // 最大張嘴角度
         const int speed = 6;        // 每秒移動的格子數
         int mouth_angle = 0;        // 當前張嘴角度
-        int angle_step  = 12;       // 每次張嘴的角位移
-        int count = 1;              // 計數器
+        int angle_step  = 24;       // 每次張嘴的角位移
+        int count = 0;              // 計數器
+        // 轉動移動方向
+        inline void _turn(Direc new_direc) {
+            if (direc_buffer == new_direc) return;
+            // 計算移動的向量
+            Pos this_move = get_move(direction);
+            Pos next_move = get_move(new_direc);
+            Pos destination = position+this_move;
+            Pos next_destination = position+this_move;
+            if (this_move != next_move) {
+                next_destination += next_move;
+            }
+            // 撞牆時可以改變方向
+            bool move_is_invalid = (destination.tile() == Tile::wall);
+            // 轉方向之後不能撞牆
+            bool next_move_is_valid = (next_destination.tile() != Tile::wall);
+            if (move_is_invalid || next_move_is_valid) {
+                direc_buffer = new_direc;
+            }
+        }
     public:
         // 建構子
         inline PacMan() noexcept {}
@@ -111,9 +132,6 @@ public:
             position.parent = _parent_;
         }
         // 成員函數
-        inline void set_direction(Direc direc) {
-            direction = direc;
-        }
         inline Pos get_move(Direc direc) {
             switch(direc) {
                 case Direc::left:  return Pos(parent, -1, +0);
@@ -143,7 +161,8 @@ public:
             else if (move.y < 0 && move.x == 0) base_angle = 90;    // 上
             else if (move.y > 0 && move.x == 0) base_angle = 270;   // 下
             else throw std::invalid_argument("wrong move");
-            int start_angle = (base_angle + mouth_angle / 2) * 16;
+            // Qt 的繪圖角度是 1/16 度
+            int start_angle = (base_angle + mouth_angle/2) * 16;
             int span_angle  = (360 - mouth_angle) * 16;
             // 繪製黃色扇形
             int offset_x = static_cast<double>((move.x * tile_size) * ratio);
@@ -157,16 +176,28 @@ public:
         // 更新狀態並繪製
         inline void update(QPainter& painter) {
             Pos move = get_move(direction);
+            Pos destination = position + move;
+            if (destination.tile() == Tile::wall) {
+                count = 0;
+            }
             if (count == 0) {
                 // 嘗試前進一格
-                Pos destination = position + move;
                 if (destination.tile() != Tile::wall) {
                     position = destination;
+                }
+                // 更新方向
+                if (direc_buffer != Direc::none) {
+                    direction = direc_buffer;
                 }
             }
             this->draw(painter, move);
             count = (count+1) % (fps/speed); // count 永遠是比例
         }
+        // slots
+        inline void turn_left () { this->_turn(Direc::left ); }
+        inline void turn_right() { this->_turn(Direc::right); }
+        inline void turn_up   () { this->_turn(Direc::up   ); }
+        inline void turn_down () { this->_turn(Direc::down ); }
     };
 
     PacMan player;
