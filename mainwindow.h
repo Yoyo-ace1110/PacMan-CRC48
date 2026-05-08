@@ -30,10 +30,12 @@ public:
     // 磚塊資料結構
     enum class Tile : uint8_t {
         flat = 0, // 可以通過的空地
-        wall = 1  // 不可通過的牆壁
+        dots = 1, // 地板上的小點點
+        wall = 2  // 不可通過的牆壁
     };
 
     // 初始化地圖
+    inline int dots_amount = 0;
     static constexpr int tile_size = 30;
     static constexpr size_t map_width = 18ULL, map_height = 15ULL;
     using MapType = std::array<std::array<Tile, map_width>, map_height>;
@@ -81,6 +83,22 @@ public:
             bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
             if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
             return parent->map[y][x];
+        }
+        // 利用 Pos 設定 Tile 資訊
+        inline void set_Tile(const Tile& tile) {
+            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
+            if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
+            parent->map[y][x] = tile;
+        }
+        // 將地上的小點點吃掉
+        inline void eat_dots() {
+            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
+            if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
+            // 如果是小點點則吃掉它
+            if (parent->map[y][x] == Tile::dots) {
+                parent->map[y][x] = Tile::flat;
+                dots_amount -= 1;
+            }
         }
     };
 
@@ -184,6 +202,8 @@ public:
                 // 嘗試前進一格
                 if (destination.tile() != Tile::wall) {
                     position = destination;
+                    // 把地上的小點點吃掉
+                    destination.eat_dots();
                 }
                 // 更新方向
                 if (direc_buffer != Direc::none) {
@@ -205,6 +225,7 @@ public:
     // 讀取檔案 file_path 作為地圖
     bool load_map(const std::string& file_path) {
         // 嘗試讀取地圖檔案
+        dots_amount = 0;
         std::ifstream file(file_path);
         if (!file.is_open()) return false;
         // 解析地圖檔案
@@ -216,9 +237,11 @@ public:
                  * '1' 視為牆壁, ' '視為空地
                  * 若前兩者都不符合則補為空地
                 */
+                map[row][col] = Tile::dots;
                 char character = line[col];
-                map[row][col] = Tile::flat;
-                if (character == '1') map[row][col] = Tile::wall;
+                if (character == '1') {
+                    map[row][col] = Tile::wall;
+                } else { dots_amount += 1; }
             }
         }
         // 關閉地圖檔案(讀取)
@@ -238,6 +261,10 @@ public:
                 painter.drawRect(x, y, tile_size, tile_size);
             }
         }
+    }
+    // 判斷是否過關
+    bool has_passed() {
+        
     }
 };
 
