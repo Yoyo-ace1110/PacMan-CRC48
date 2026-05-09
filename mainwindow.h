@@ -35,7 +35,7 @@ public:
     };
 
     // 初始化地圖
-    inline int dots_amount = 0;
+    int dots_amount = 0;
     static constexpr int tile_size = 30;
     static constexpr size_t map_width = 18ULL, map_height = 15ULL;
     using MapType = std::array<std::array<Tile, map_width>, map_height>;
@@ -97,7 +97,7 @@ public:
             // 如果是小點點則吃掉它
             if (parent->map[y][x] == Tile::dots) {
                 parent->map[y][x] = Tile::flat;
-                dots_amount -= 1;
+                parent->dots_amount -= 1;
             }
         }
     };
@@ -263,9 +263,7 @@ public:
         }
     }
     // 判斷是否過關
-    bool has_passed() {
-        
-    }
+    bool has_passed() {return (dots_amount == 0);}
 };
 
 #endif // MAINWINDOW_H
