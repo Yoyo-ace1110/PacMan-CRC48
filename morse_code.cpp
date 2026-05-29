@@ -48,9 +48,10 @@ std::vector<std::string> split(std::string_view str, char separator) {
     while (str.size() > 0) {
         // split space
         if (str.front() == separator) {
-            if (current == "") continue;
-            result.push_back(current);
-            current.clear();
+            if (current != "") {
+                result.push_back(current);
+                current.clear();
+            }
         } else {
             // normal char
             current += str.front();
@@ -70,6 +71,8 @@ std::string decode_morse_code(std::vector<std::string> slices) {
         if (!MorseTable.contains(slice)) {
             std::cout << "Error: Invalid input of Morse code\n";
             std::cout << "Unexpected slice: " << std::string(slice) << '\n';
+            result += '?';
+            continue;
         }
         // append the letter to result
         result += MorseTable.at(slice);
