@@ -7,6 +7,7 @@
 #include <QMainWindow> // 主視窗
 #include <QPainter>    // 畫筆工具
 #include <QKeyEvent>   // 鍵盤工具
+#include <QPoint>      // 位置資訊
 
 using size_t  = std::size_t;
 static constexpr int fps = 24;
@@ -36,6 +37,7 @@ public:
 
     // 初始化地圖
     int dots_amount = 0;
+    static constexpr int dot_radius = 3;
     static constexpr int tile_size = 30;
     static constexpr size_t map_width = 18ULL, map_height = 15ULL;
     using MapType = std::array<std::array<Tile, map_width>, map_height>;
@@ -83,6 +85,10 @@ public:
             bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
             if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
             return parent->map[y][x];
+        }
+        // 利用 Pos 取得 QPoint
+        inline QPoint get_point() const {
+            return QPoint(x, y);
         }
         // 利用 Pos 設定 Tile 資訊
         inline void set_Tile(const Tile& tile) {
@@ -255,10 +261,17 @@ public:
                 // 計算每一格的繪製位置
                 int x = col * tile_size;
                 int y = row * tile_size;
-                // 繪製該格
+                // 繪製該格背景顏色
                 painter.setBrush(map[row][col] == Tile::wall ? Qt::blue : Qt::black);
                 painter.setPen(QPen(Qt::NoPen));
                 painter.drawRect(x, y, tile_size, tile_size);
+                // 繪製走過的小點點
+                if (map[row][col] == Tile::dots) {
+                    painter.setRenderHint(QPainter::Antialiasing);
+                    painter.setBrush(QColor(255, 184, 174));
+                    Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
+                    painter.drawEllipse(center.get_point(), dot_radius, dot_radius);
+                }
             }
         }
     }
