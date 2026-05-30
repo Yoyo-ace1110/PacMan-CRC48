@@ -32,19 +32,23 @@ public:
     enum class Tile : uint8_t {
         flat = 0, // 可以通過的空地
         dots = 1, // 地板上的小點點
-        wall = 2  // 不可通過的牆壁
+        pill = 2, // 翻轉規則的小球
+        wall = 3  // 不可通過的牆壁
     };
 
     // 初始化地圖
     int dots_amount = 0;
-    static constexpr int dot_radius = 3;
+    bool reverse_game_rule = false;
     static constexpr int tile_size = 30;
+    static constexpr int dot_radius = 3;
+    static constexpr int pill_radius = 8;
     static constexpr size_t map_width = 18ULL, map_height = 15ULL;
     using MapType = std::array<std::array<Tile, map_width>, map_height>;
     MapType map;
 
     // 位置資料結構
     struct Pos {
+    public:
         int x, y;
         MainWindow *parent = nullptr;
         inline Pos(const Pos& other) noexcept
@@ -98,13 +102,26 @@ public:
         }
         // 將地上的小點點吃掉
         inline void eat_dots() {
-            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
-            if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
+            _boundary_check();
             // 如果是小點點則吃掉它
             if (parent->map[y][x] == Tile::dots) {
                 parent->map[y][x] = Tile::flat;
                 parent->dots_amount -= 1;
             }
+        }
+        // 將地上的小藥丸吃掉
+        inline void eat_pill() {
+            _boundary_check();
+            // 吃掉神奇小藥丸(小球)並生效
+            if (parent->map[y][x] == Tile::pill) {
+                parent->map[y][x] = Tile::flat;
+                parent->reverse_game_rule = true;
+            }
+        }
+    private:
+        inline void _boundary_check() const {
+            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
+            if (is_out_of_range) throw std::out_of_range("Position out of range");
         }
     };
 
@@ -210,6 +227,8 @@ public:
                     position = destination;
                     // 把地上的小點點吃掉
                     destination.eat_dots();
+                    // 把地上的小藥丸吃掉
+                    destination.eat_pill();
                 }
                 // 更新方向
                 if (direc_buffer != Direc::none) {
@@ -245,9 +264,16 @@ public:
                 */
                 map[row][col] = Tile::dots;
                 char character = line[col];
-                if (character == '1') {
-                    map[row][col] = Tile::wall;
-                } else { dots_amount += 1; }
+                switch (character) {
+                    case '1':
+                        map[row][col] = Tile::wall;
+                        break;
+                    case 'O':
+                        map[row][col] = Tile::pill;
+                    default:
+                        dots_amount += 1;
+                        break;
+                };
             }
         }
         // 關閉地圖檔案(讀取)
@@ -265,18 +291,25 @@ public:
                 painter.setBrush(map[row][col] == Tile::wall ? Qt::blue : Qt::black);
                 painter.setPen(QPen(Qt::NoPen));
                 painter.drawRect(x, y, tile_size, tile_size);
-                // 繪製走過的小點點
+                // 繪製小點點
                 if (map[row][col] == Tile::dots) {
-                    painter.setRenderHint(QPainter::Antialiasing);
                     painter.setBrush(QColor(255, 184, 174));
+                    painter.setRenderHint(QPainter::Antialiasing);
                     Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
                     painter.drawEllipse(center.get_point(), dot_radius, dot_radius);
+                }
+                // 繪製小藥丸
+                if (map[row][col] == Tile::pill) {
+                    painter.setBrush(QColor(255, 204, 184));
+                    painter.setRenderHint(QPainter::Antialiasing);
+                    Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
+                    painter.drawEllipse(center.get_point(), pill_radius, pill_radius);
                 }
             }
         }
     }
     // 判斷是否過關
-    bool has_passed() {return (dots_amount == 0);}
+    bool has_passed() { return (dots_amount == 0); }
 };
 
 #endif // MAINWINDOW_H
