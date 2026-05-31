@@ -16,6 +16,14 @@ QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 QT_END_NAMESPACE
 
+enum class Direc : uint8_t {
+    none  = 0,
+    right = 1,
+    left  = 2,
+    up    = 3,
+    down  = 4,
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 private:
@@ -37,10 +45,12 @@ public:
     };
 
     // 初始化地圖
-    int count = 0;          // 時間計數器
-    int dots_amount = 0;    // 點點的數量
-    const int speed = 6;    // 小精靈移動的速度
-    bool reverse_game_rule = false;
+    int count = 0;              // 時間計數器
+    int dots_amount = 0;        // 點點的數量
+    const int ghost_speed = 6;  // 鬼魂移動的速度
+    const int rghost_speed = 4; // 鬼魂被抓時的移速
+    const int pacman_speed = 6; // 小精靈移動的速度
+    bool reverse = false;
     static constexpr int tile_size = 30;
     static constexpr int dot_radius = 3;
     static constexpr int pill_radius = 8;
@@ -116,8 +126,9 @@ public:
             _boundary_check();
             // 吃掉神奇小藥丸(小球)並生效
             if (parent->map[y][x] == Tile::pill) {
+                parent->reverse = true;
                 parent->map[y][x] = Tile::flat;
-                parent->reverse_game_rule = true;
+                parent->dots_amount -= 1;
             }
         }
     private:
@@ -130,13 +141,6 @@ public:
     // 物件: 小精靈
     class PacMan {
     private:
-        enum class Direc : uint8_t {
-            none  = 0,
-            right = 1,
-            left  = 2,
-            up    = 3,
-            down  = 4,
-        };
         static constexpr int radius = tile_size * 0.4;
         // 成員變數
         MainWindow *parent = nullptr;
@@ -185,7 +189,7 @@ public:
         // 繪製小精靈
         inline void draw(QPainter& painter, const Pos& move) {
             // 設定前進比例
-            double ratio = parent->count * (static_cast<double>(parent->speed)/fps);
+            double ratio = parent->count * (static_cast<double>(parent->pacman_speed)/fps);
             // 渲染相關設定
             painter.setRenderHint(QPainter::Antialiasing);  // 避免鋸齒狀
             painter.setBrush(Qt::yellow);                   // 黃色圓心
@@ -236,7 +240,7 @@ public:
                 }
             }
             this->draw(painter, move);
-            parent->count = (parent->count+1) % (fps/parent->speed); // count 永遠是比例
+            parent->count = (parent->count+1) % (fps/parent->pacman_speed); // count 永遠是比例
         }
         // slots
         inline void turn_left () { this->_turn(Direc::left ); }
@@ -245,6 +249,37 @@ public:
         inline void turn_down () { this->_turn(Direc::down ); }
     };
 
+    // 物件: 鬼魂
+    class Ghost {
+    private:
+        // 成員變數
+        MainWindow *parent = nullptr;
+        Pos position = Pos(parent, 0, 0);
+        // 四種情況
+        QColor normal_body = QColor(0, 0, 0);
+        static constexpr QColor eye_white   = QColor(255, 255, 255); // 正常大眼白
+        static constexpr QColor eye_pupil   = QColor(33, 33, 255);   // 正常瞳孔
+        static constexpr QColor scared_body = QColor(33, 33, 255);   // 驚嚇深藍色身體
+        static constexpr QColor scared_face = QColor(255, 184, 174); // 驚嚇時的粉米色表情
+        static constexpr QColor flash_body  = QColor(255, 255, 255); // 閃爍時的純白身體
+        static constexpr QColor flash_face  = QColor(255, 0, 0);     // 閃爍時的紅色表情
+    protected:
+        // 建構子
+        inline Ghost() noexcept {}
+        inline void init(MainWindow *_parent_, const Pos& pos, const QColor& body_color) {
+            position = pos;
+            parent = _parent_;
+            position.parent = _parent_;
+            normal_body = body_color;
+        }
+        // 渲染鬼魂
+        inline void draw(QPainter& painter, const Pos& move) {
+            const int speed = (parent->reverse ? parent->rghost_speed : parent->ghost_speed);
+            double ratio = parent->count * (static_cast<double>(speed)/fps);
+        }
+    };
+
+    // 宣告小精靈物件: 玩家
     PacMan player;
 
     // 讀取檔案 file_path 作為地圖
@@ -270,6 +305,8 @@ public:
                         break;
                     case 'O':
                         map[row][col] = Tile::pill;
+                        dots_amount += 1;
+                        break;
                     default:
                         dots_amount += 1;
                         break;
@@ -299,7 +336,7 @@ public:
                     painter.drawEllipse(center.get_point(), dot_radius, dot_radius);
                 }
                 // 繪製小藥丸
-                if (map[row][col] == Tile::pill && count < (fps/speed/2)) {
+                if (map[row][col] == Tile::pill && count < (fps/pacman_speed/2)) {
                     painter.setBrush(QColor(255, 204, 184));
                     painter.setRenderHint(QPainter::Antialiasing);
                     Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
