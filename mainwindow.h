@@ -37,7 +37,9 @@ public:
     };
 
     // 初始化地圖
-    int dots_amount = 0;
+    int count = 0;          // 時間計數器
+    int dots_amount = 0;    // 點點的數量
+    const int speed = 6;    // 小精靈移動的速度
     bool reverse_game_rule = false;
     static constexpr int tile_size = 30;
     static constexpr int dot_radius = 3;
@@ -142,10 +144,8 @@ public:
         Direc direc_buffer = Direc::none;  // 移動方向緩衝區
         Pos position = Pos(parent, 1, 1);  // 地圖位置
         const int max_angle = 72;   // 最大張嘴角度
-        const int speed = 6;        // 每秒移動的格子數
         int mouth_angle = 0;        // 當前張嘴角度
         int angle_step  = 24;       // 每次張嘴的角位移
-        int count = 0;              // 計數器
         // 轉動移動方向
         inline void _turn(Direc new_direc) {
             if (direc_buffer == new_direc) return;
@@ -185,7 +185,7 @@ public:
         // 繪製小精靈
         inline void draw(QPainter& painter, const Pos& move) {
             // 設定前進比例
-            double ratio = count * (static_cast<double>(speed)/fps);
+            double ratio = parent->count * (static_cast<double>(parent->speed)/fps);
             // 渲染相關設定
             painter.setRenderHint(QPainter::Antialiasing);  // 避免鋸齒狀
             painter.setBrush(Qt::yellow);                   // 黃色圓心
@@ -219,9 +219,9 @@ public:
             Pos move = get_move(direction);
             Pos destination = position + move;
             if (destination.tile() == Tile::wall) {
-                count = 0;
+                parent->count = 0;
             }
-            if (count == 0) {
+            if (parent->count == 0) {
                 // 嘗試前進一格
                 if (destination.tile() != Tile::wall) {
                     position = destination;
@@ -236,7 +236,7 @@ public:
                 }
             }
             this->draw(painter, move);
-            count = (count+1) % (fps/speed); // count 永遠是比例
+            parent->count = (parent->count+1) % (fps/parent->speed); // count 永遠是比例
         }
         // slots
         inline void turn_left () { this->_turn(Direc::left ); }
@@ -299,7 +299,7 @@ public:
                     painter.drawEllipse(center.get_point(), dot_radius, dot_radius);
                 }
                 // 繪製小藥丸
-                if (map[row][col] == Tile::pill) {
+                if (map[row][col] == Tile::pill && count < (fps/speed/2)) {
                     painter.setBrush(QColor(255, 204, 184));
                     painter.setRenderHint(QPainter::Antialiasing);
                     Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
