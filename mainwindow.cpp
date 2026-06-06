@@ -40,9 +40,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
 // 繪製一幀的畫面
 void MainWindow::paintEvent(QPaintEvent *event) {
-    QPainter painter(this);
-    draw_map(painter);
-    player.update(painter);
+    QPainter painter(this); // 建立畫筆
+    draw_map(painter);      // 繪製地圖
+    player.update(painter); // 繪製小精靈
+    count += 1;             // 計數器遞增
+    count %= (fps*3600);    // 循環以避免溢位
 }
 
 // signals

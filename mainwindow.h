@@ -1,13 +1,21 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <array>       // std::array
-#include <cstdint>     // size_t
-#include <fstream>     // 操作檔案
-#include <QMainWindow> // 主視窗
-#include <QPainter>    // 畫筆工具
-#include <QKeyEvent>   // 鍵盤工具
-#include <QPoint>      // 位置資訊
+#include <array>        // std::array
+#include <cstdint>      // size_t
+#include <fstream>      // 操作檔案
+#include <QMainWindow>  // 主視窗
+#include <QPainter>     // 畫筆工具
+#include <QPainterPath> // 進階畫筆
+#include <QKeyEvent>    // 鍵盤工具
+#include <QPoint>       // 位置資訊
+#include <QTime>        // 獨立時間
+
+/* TODO:
+ * reverse game rule 經過時間要改回來
+ * 鬼魂狀態根據上述切換: 驚嚇5s, 閃爍2s
+ * 讓四個鬼魂繼承 Ghost
+*/
 
 using size_t  = std::size_t;
 static constexpr int fps = 24;
@@ -47,9 +55,6 @@ public:
     // 初始化地圖
     int count = 0;              // 時間計數器
     int dots_amount = 0;        // 點點的數量
-    const int ghost_speed = 6;  // 鬼魂移動的速度
-    const int rghost_speed = 4; // 鬼魂被抓時的移速
-    const int pacman_speed = 6; // 小精靈移動的速度
     bool reverse = false;
     static constexpr int tile_size = 30;
     static constexpr int dot_radius = 3;
@@ -147,6 +152,7 @@ public:
         Direc direction = Direc::none;     // 現在的移動方向
         Direc direc_buffer = Direc::none;  // 移動方向緩衝區
         Pos position = Pos(parent, 1, 1);  // 地圖位置
+        const int pacman_speed = 6; // 小精靈移動的速度
         const int max_angle = 72;   // 最大張嘴角度
         int mouth_angle = 0;        // 當前張嘴角度
         int angle_step  = 24;       // 每次張嘴的角位移
@@ -187,9 +193,9 @@ public:
             }
         }
         // 繪製小精靈
-        inline void draw(QPainter& painter, const Pos& move) {
+        inline void draw(QPainter& painter, const Pos& move, int count) {
             // 設定前進比例
-            double ratio = parent->count * (static_cast<double>(parent->pacman_speed)/fps);
+            double ratio = count * (static_cast<double>(pacman_speed)/fps);
             // 渲染相關設定
             painter.setRenderHint(QPainter::Antialiasing);  // 避免鋸齒狀
             painter.setBrush(Qt::yellow);                   // 黃色圓心
@@ -220,12 +226,16 @@ public:
         }
         // 更新狀態並繪製
         inline void update(QPainter& painter) {
+            // 計算相對於小精靈移動速度的計數器
+            int pacman_count = parent->count % (fps/pacman_speed);
+            // 取得目的地
             Pos move = get_move(direction);
             Pos destination = position + move;
             if (destination.tile() == Tile::wall) {
-                parent->count = 0;
+                pacman_count = 0;
             }
-            if (parent->count == 0) {
+            // 完成一周期的循環
+            if (pacman_count == 0) {
                 // 嘗試前進一格
                 if (destination.tile() != Tile::wall) {
                     position = destination;
@@ -239,8 +249,7 @@ public:
                     direction = direc_buffer;
                 }
             }
-            this->draw(painter, move);
-            parent->count = (parent->count+1) % (fps/parent->pacman_speed); // count 永遠是比例
+            this->draw(painter, move, pacman_count);
         }
         // slots
         inline void turn_left () { this->_turn(Direc::left ); }
@@ -251,32 +260,140 @@ public:
 
     // 物件: 鬼魂
     class Ghost {
+    public:
+        enum class State : uint8_t {
+            normal      = 0,
+            scared      = 1,
+            flashing    = 2,
+            eaten       = 3
+        };
     private:
-        // 成員變數
-        MainWindow *parent = nullptr;
-        Pos position = Pos(parent, 0, 0);
-        // 四種情況
-        QColor normal_body = QColor(0, 0, 0);
-        static constexpr QColor eye_white   = QColor(255, 255, 255); // 正常大眼白
-        static constexpr QColor eye_pupil   = QColor(33, 33, 255);   // 正常瞳孔
-        static constexpr QColor scared_body = QColor(33, 33, 255);   // 驚嚇深藍色身體
-        static constexpr QColor scared_face = QColor(255, 184, 174); // 驚嚇時的粉米色表情
-        static constexpr QColor flash_body  = QColor(255, 255, 255); // 閃爍時的純白身體
-        static constexpr QColor flash_face  = QColor(255, 0, 0);     // 閃爍時的紅色表情
+        // 各種情況的顏色(實作在下方)                                        // 正常身體
+        static inline const QColor normal_eye   = QColor(255, 255, 255); // 正常眼睛
+        static inline const QColor normal_pupil = QColor(33, 33, 255);   // 正常瞳孔
+        static inline const QColor scared_body  = QColor(33, 33, 255);   // 驚嚇身體
+        static inline const QColor scared_eye   = QColor(255, 184, 174); // 驚嚇眼睛
+        static inline const QColor scared_pupil = scared_eye;            // 驚嚇瞳孔
+        static inline const QColor flash_body   = QColor(255, 255, 255); // 閃爍身體
+        static inline const QColor flash_eye    = QColor(255, 0, 0);     // 閃爍眼睛
+        static inline const QColor flash_pupil  = flash_eye;             // 閃爍瞳孔
+        static inline const QColor eaten_body   = QColor(0, 0, 0);       // 被吃身體
+        static inline const QColor eaten_eye    = normal_eye;            // 被吃眼睛
+        static inline const QColor eaten_pupil  = normal_pupil;          // 被吃瞳孔
     protected:
-        // 建構子
-        inline Ghost() noexcept {}
-        inline void init(MainWindow *_parent_, const Pos& pos, const QColor& body_color) {
+        // 成員變數
+        State state = State::normal;            // 狀態
+        MainWindow *parent = nullptr;           // 主視窗
+        Pos position = Pos(parent, 0, 0);       // 自身位置
+        QColor normal_body = QColor(0, 0, 0);   // 正常身體
+        const int ghost_speed = 6;  // 鬼魂移動的速度
+        const int rghost_speed = 4; // 鬼魂被抓時的移速
+        // 虛擬函數
+        virtual Pos get_move();
+        inline Ghost() noexcept {};
+        inline virtual ~Ghost() noexcept = default;
+        inline virtual void init(MainWindow *_parent_, const Pos& pos, const QColor& body_color) {
             position = pos;
             parent = _parent_;
-            position.parent = _parent_;
             normal_body = body_color;
+            position.parent = _parent_;
         }
         // 渲染鬼魂
         inline void draw(QPainter& painter, const Pos& move) {
-            const int speed = (parent->reverse ? parent->rghost_speed : parent->ghost_speed);
-            double ratio = parent->count * (static_cast<double>(speed)/fps);
+            // 計算平滑移動比例
+            const int speed = (parent->reverse ? rghost_speed : ghost_speed);
+            const double ratio = parent->count * (static_cast<double>(speed)/fps);
+            // 計算像素位置
+            int offset_x = static_cast<double>((move.x * tile_size) * ratio);
+            int offset_y = static_cast<double>((move.y * tile_size) * ratio);
+            int center_x = position.x * tile_size + (tile_size / 2);
+            int center_y = position.y * tile_size + (tile_size / 2);
+            Pos pixel = Pos(parent, center_x + offset_x, center_y + offset_y);
+            // 判斷顏色
+            QColor body_color, eye_color, pupil_color;
+            switch (state) {
+                // 正常狀態
+                case State::normal: {
+                    eye_color   = normal_eye;
+                    body_color  = normal_body;
+                    pupil_color = normal_pupil;
+                    break;
+                }
+                // 驚嚇狀態
+                case State::scared: {
+                    eye_color   = scared_eye;
+                    body_color  = scared_body;
+                    pupil_color = scared_pupil;
+                    break;
+                }
+                // 閃爍狀態
+                case State::flashing: {
+                    int current_msec = QTime::currentTime().msec();
+                    bool toggle = (current_msec % 333) < 166;
+                    if (toggle) {
+                        body_color  = scared_body;
+                        eye_color   = scared_eye;
+                        pupil_color = scared_pupil;
+                    } else {
+                        body_color  = flash_body;
+                        eye_color   = flash_eye;
+                        pupil_color = flash_pupil;
+                    }
+                    break;
+                }
+                // 被吃掉了
+                case State::eaten: {
+                    body_color  = eaten_body;
+                    eye_color   = eaten_eye;
+                    pupil_color = eaten_pupil;
+                    break;
+                }
+                default: {
+                    throw std::runtime_error("Unkown state");
+                    break;
+                }
+            }
+            // 繪製身體與眼睛
+            painter.setRenderHint(QPainter::Antialiasing);
+            int radius = tile_size * 0.4;
+            // 繪製鬼魂身體
+            if (body_color != Qt::transparent) {
+                QPainterPath bodyPath;
+                // 上半身: 繪製一個半圓弧
+                bodyPath.arcMoveTo(pixel.x-radius, pixel.y-radius, radius*2, radius*2, 180);
+                bodyPath.arcTo(pixel.x-radius, pixel.y-radius, radius*2, radius*2, 180, -180);
+                // 往下畫到右下角的身體邊緣
+                bodyPath.lineTo(pixel.x+radius, pixel.y+radius);
+                // 下半身: 3個波浪裙擺
+                int wave = (radius*2)/3;
+                bodyPath.lineTo(pixel.x + radius - wave * 0.5, pixel.y + radius - 4);
+                bodyPath.lineTo(pixel.x + radius - wave,       pixel.y + radius);
+                bodyPath.lineTo(pixel.x - radius + wave,       pixel.y + radius);
+                bodyPath.lineTo(pixel.x - radius,              pixel.y + radius);
+                bodyPath.closeSubpath();
+                painter.setBrush(body_color);
+                painter.setPen(QPen(Qt::NoPen));
+                painter.drawPath(bodyPath);
+            }
+            // 繪製眼白
+            painter.setBrush(eye_color);
+            int eye_width = radius * 0.4;
+            int eye_height = radius * 0.6;
+            int eye_offset_x = radius * 0.35;
+            QPoint left_eye (pixel.x - eye_offset_x, pixel.y - radius * 0.1);
+            QPoint right_eye(pixel.x + eye_offset_x, pixel.y - radius * 0.1);
+            painter.drawEllipse(left_eye,  eye_width, eye_height);
+            painter.drawEllipse(right_eye, eye_width, eye_height);
+            // 繪製瞳孔 (根據 move 微調位置)
+            painter.setBrush(pupil_color);
+            int pupil_radius = radius * 0.18;
+            QPoint pupil_offset(move.x * 2, move.y * 2);
+            painter.drawEllipse(left_eye  + pupil_offset, pupil_radius, pupil_radius);
+            painter.drawEllipse(right_eye + pupil_offset, pupil_radius, pupil_radius);
         }
+    public:
+        inline State get_state() const { return state; }
+        inline void set_state(State new_state) { state = new_state; }
     };
 
     // 宣告小精靈物件: 玩家
@@ -335,8 +452,10 @@ public:
                     Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
                     painter.drawEllipse(center.get_point(), dot_radius, dot_radius);
                 }
-                // 繪製小藥丸
-                if (map[row][col] == Tile::pill && count < (fps/pacman_speed/2)) {
+                // 繪製小藥丸(3Hz)
+                int current_msec = QTime::currentTime().msec();
+                bool is_visible = (current_msec % 333) < 166;
+                if (map[row][col] == Tile::pill && is_visible) {
                     painter.setBrush(QColor(255, 204, 184));
                     painter.setRenderHint(QPainter::Antialiasing);
                     Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
