@@ -34,6 +34,13 @@ enum class Direc : uint8_t {
     down  = 4,
 };
 
+// 遊戲狀態
+enum class GameState : uint8_t {
+    normal   = 0,
+    chasing  = 1,
+    flashing = 2
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 private:
@@ -45,13 +52,6 @@ public:
     MainWindow(QWidget *parent = nullptr);
     void paintEvent(QPaintEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
-
-    // 遊戲狀態
-    enum class GameState : uint8_t {
-        normal   = 0, 
-        chasing  = 1, 
-        flashing = 2
-    };
 
     // 磚塊資料結構
     enum class Tile : uint8_t {
@@ -140,7 +140,7 @@ public:
             _boundary_check();
             // 吃掉神奇小藥丸(小球)並生效
             if (parent->map[y][x] == Tile::pill) {
-                parent->reverse = true;
+                parent->state = GameState::chasing;
                 parent->map[y][x] = Tile::flat;
                 parent->dots_amount -= 1;
             }
@@ -310,7 +310,8 @@ public:
         // 渲染鬼魂
         inline void draw(QPainter& painter, const Pos& move) {
             // 計算平滑移動比例
-            const int speed = (parent->reverse ? rghost_speed : ghost_speed);
+            bool reverse = (parent->state != GameState::normal);
+            const int speed = (reverse ? rghost_speed : ghost_speed);
             const double ratio = parent->count * (static_cast<double>(speed)/fps);
             // 計算像素位置
             int offset_x = static_cast<double>((move.x * tile_size) * ratio);
