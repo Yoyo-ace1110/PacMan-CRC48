@@ -2,28 +2,30 @@
 #define MAINWINDOW_H
 
 #include <array>        // std::array
-#include <cstdint>      // size_t
 #include <fstream>      // 操作檔案
+#include <cstdint>      // size_t
+#include <string>       // string
 #include <QMainWindow>  // 主視窗
 #include <QPainter>     // 畫筆工具
 #include <QPainterPath> // 進階畫筆
 #include <QKeyEvent>    // 鍵盤工具
 #include <QPoint>       // 位置資訊
 #include <QTime>        // 獨立時間
+using size_t = std::size_t;
 
 /* TODO:
+ * 套用新地圖
  * reverse game rule 經過時間要改回來
  * 鬼魂狀態根據上述切換: 驚嚇5s, 閃爍2s
- * 讓四個鬼魂繼承 Ghost
-*/
-
-using size_t  = std::size_t;
-static constexpr int fps = 24;
+ * 讓四個鬼魂繼承 Ghost */
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 QT_END_NAMESPACE
 
+static constexpr int fps = 24;
+
+// 方向列舉
 enum class Direc : uint8_t {
     none  = 0,
     right = 1,
@@ -38,12 +40,13 @@ private:
     Ui::MainWindow *ui;
     QTimer *timer; // 計時器
 public:
-    // constructor
+    // Constructor
     ~MainWindow();
     MainWindow(QWidget *parent = nullptr);
     void paintEvent(QPaintEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 
+    // 遊戲狀態
     enum class GameState : uint8_t {
         normal   = 0, 
         chasing  = 1, 
@@ -58,8 +61,8 @@ public:
         wall = 3  // 不可通過的牆壁
     };
 
-    int count = 0;                        // 時間計數器
-    int dots_amount = 0;                  // 點點的數量
+    int count = 0;                      // 時間計數器
+    int dots_amount = 0;                // 點點的數量
     GameState state = GameState::normal;  // 遊戲狀態
     static constexpr int tile_size = 30;  // 磁磚大小
     static constexpr int dot_radius = 3;  // 點點半徑
@@ -402,7 +405,7 @@ public:
         inline void set_status(State new_status) { status = new_status; }
     };
 
-    // 宣告小精靈物件: 玩家
+    // 宣告小精靈
     PacMan player;
 
     // 讀取檔案 file_path 作為地圖
@@ -416,23 +419,40 @@ public:
         for (size_t row = 0; std::getline(file, line) && row < map_height; ++row) {
             // 跑遍每一行, 每一列
             for (size_t col = 0; (col < line.length()) && (col < map_width); ++col) {
-                /* 讀取一個個字元並解析成 Tile
-                 * '1' 視為牆壁, ' '視為空地
-                 * 若前兩者都不符合則補為空地
-                */
-                map[row][col] = Tile::dots;
                 char character = line[col];
+                /* 讀取一個個字元並解析成 Tile
+                 * '1' 視為牆壁
+                 * ' ' 視為點點
+                 * 'x' 視為空地
+                 * 若前兩者都不符合則補為空地 */
                 switch (character) {
-                    case '1':
+                    // 牆壁
+                    case '1': {
                         map[row][col] = Tile::wall;
                         break;
-                    case 'O':
+                    }
+                    // 點點
+                    case ' ': {
+                        map[row][col] = Tile::dots;
+                        dots_amount += 1;
+                        break;
+                    }
+                    // 藥丸
+                    case 'O': {
                         map[row][col] = Tile::pill;
                         dots_amount += 1;
                         break;
-                    default:
-                        dots_amount += 1;
+                    }
+                    // 空地
+                    case 'x': {
+                        map[row][col] = Tile::flat;
                         break;
+                    }
+                    // 未知符號
+                    default: {
+                        std::string msg = "Error: Unknown character ";
+                        throw std::invalid_argument(msg + character);
+                    }
                 };
             }
         }
