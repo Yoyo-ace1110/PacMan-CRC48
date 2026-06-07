@@ -44,6 +44,12 @@ public:
     void paintEvent(QPaintEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 
+    enum class GameState : uint8_t {
+        normal   = 0, 
+        chasing  = 1, 
+        flashing = 2
+    };
+
     // 磚塊資料結構
     enum class Tile : uint8_t {
         flat = 0, // 可以通過的空地
@@ -52,16 +58,16 @@ public:
         wall = 3  // 不可通過的牆壁
     };
 
+    int count = 0;                        // 時間計數器
+    int dots_amount = 0;                  // 點點的數量
+    GameState state = GameState::normal;  // 遊戲狀態
+    static constexpr int tile_size = 30;  // 磁磚大小
+    static constexpr int dot_radius = 3;  // 點點半徑
+    static constexpr int pill_radius = 8; // 藥丸半徑
     // 初始化地圖
-    int count = 0;              // 時間計數器
-    int dots_amount = 0;        // 點點的數量
-    bool reverse = false;
-    static constexpr int tile_size = 30;
-    static constexpr int dot_radius = 3;
-    static constexpr int pill_radius = 8;
-    static constexpr size_t map_width = 18ULL, map_height = 15ULL;
-    using MapType = std::array<std::array<Tile, map_width>, map_height>;
-    MapType map;
+    static constexpr size_t map_width  = 18ULL;
+    static constexpr size_t map_height = 15ULL;
+    std::array<std::array<Tile, map_width>, map_height> map;
 
     // 位置資料結構
     struct Pos {
@@ -282,7 +288,7 @@ public:
         static inline const QColor eaten_pupil  = normal_pupil;          // 被吃瞳孔
     protected:
         // 成員變數
-        State state = State::normal;            // 狀態
+        State status = State::normal;            // 狀態
         MainWindow *parent = nullptr;           // 主視窗
         Pos position = Pos(parent, 0, 0);       // 自身位置
         QColor normal_body = QColor(0, 0, 0);   // 正常身體
@@ -311,7 +317,7 @@ public:
             Pos pixel = Pos(parent, center_x + offset_x, center_y + offset_y);
             // 判斷顏色
             QColor body_color, eye_color, pupil_color;
-            switch (state) {
+            switch (status) {
                 // 正常狀態
                 case State::normal: {
                     eye_color   = normal_eye;
@@ -349,7 +355,7 @@ public:
                     break;
                 }
                 default: {
-                    throw std::runtime_error("Unkown state");
+                    throw std::runtime_error("Unkown status");
                     break;
                 }
             }
@@ -392,8 +398,8 @@ public:
             painter.drawEllipse(right_eye + pupil_offset, pupil_radius, pupil_radius);
         }
     public:
-        inline State get_state() const { return state; }
-        inline void set_state(State new_state) { state = new_state; }
+        inline State get_status() const { return status; }
+        inline void set_status(State new_status) { status = new_status; }
     };
 
     // 宣告小精靈物件: 玩家
