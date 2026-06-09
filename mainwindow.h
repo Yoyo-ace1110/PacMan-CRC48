@@ -9,15 +9,15 @@
 #include <QPainter>     // 畫筆工具
 #include <QPainterPath> // 進階畫筆
 #include <QKeyEvent>    // 鍵盤工具
+#include <QTimer>       // 計時工具
 #include <QPoint>       // 位置資訊
 #include <QTime>        // 獨立時間
 using size_t = std::size_t;
 
 /* TODO:
- * 套用新地圖
- * reverse game rule 經過時間要改回來
- * 鬼魂狀態根據上述切換: 驚嚇5s, 閃爍2s
- * 讓四個鬼魂繼承 Ghost */
+ * 實作鬼魂出生點
+ * 讓四個鬼魂繼承 Ghost
+ * 碰撞偵測(小精靈/鬼魂) */
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
@@ -38,7 +38,7 @@ enum class Direc : uint8_t {
 enum class GameState : uint8_t {
     normal   = 0,
     chasing  = 1,
-    flashing = 2
+    flashing = 2,
 };
 
 class MainWindow : public QMainWindow {
@@ -70,7 +70,13 @@ public:
     // 初始化地圖
     static constexpr size_t map_width  = 18ULL;
     static constexpr size_t map_height = 15ULL;
-    std::array<std::array<Tile, map_width>, map_height> map;
+    using row_type = std::array<Tile, map_width>;
+    std::array<row_type, map_height> map;
+
+    // 設定遊戲狀態
+    void set_state_normal   () { state = GameState::normal; }
+    void set_state_chasing  () { state = GameState::chasing; }
+    void set_state_flashing () { state = GameState::flashing; }
 
     // 位置資料結構
     struct Pos {
@@ -138,9 +144,11 @@ public:
         // 將地上的小藥丸吃掉
         inline void eat_pill() {
             _boundary_check();
-            // 吃掉神奇小藥丸(小球)並生效
+            // 吃掉神奇小藥丸並生效
             if (parent->map[y][x] == Tile::pill) {
-                parent->state = GameState::chasing;
+                parent->set_state_chasing();
+                QTimer::singleShot(5000, parent, &MainWindow::set_state_flashing);
+                QTimer::singleShot(7000, parent, &MainWindow::set_state_normal);
                 parent->map[y][x] = Tile::flat;
                 parent->dots_amount -= 1;
             }
@@ -274,7 +282,7 @@ public:
             normal      = 0,
             scared      = 1,
             flashing    = 2,
-            eaten       = 3
+            eaten       = 3,
         };
     private:
         // 各種情況的顏色(實作在下方)                                        // 正常身體
@@ -402,8 +410,13 @@ public:
             painter.drawEllipse(right_eye + pupil_offset, pupil_radius, pupil_radius);
         }
     public:
-        inline State get_status() const { return status; }
-        inline void set_status(State new_status) { status = new_status; }
+        // inline State get_status() const { return status; }
+        // inline void set_status(State new_status) { status = new_status; }
+        inline void update_status() {
+            // 將主視窗的 GameState 轉為 Ghost::State
+            uint8_t temp = (uint8_t)parent->state;
+            status = static_cast<State>(temp);
+        }
     };
 
     // 宣告小精靈
