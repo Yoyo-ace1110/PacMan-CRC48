@@ -45,6 +45,20 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     player.update(painter); // 繪製小精靈
     count += 1;             // 計數器遞增
     count %= (fps*3600);    // 循環以避免溢位
+    // 遊戲結束判斷
+    if (has_passed()) {
+        QMessageBox::information(
+            this,
+            "Game Over",
+            "You Win!"
+        );
+    } else if (has_failed()) {
+        QMessageBox::information(
+            this,
+            "Game Over",
+            "You lose"
+        );
+    }
 }
 
 // signals

@@ -12,6 +12,7 @@
 #include <QTimer>       // 計時工具
 #include <QPoint>       // 位置資訊
 #include <QTime>        // 獨立時間
+#include <QMessageBox>  // 彈出視窗
 using size_t = std::size_t;
 
 /* TODO:
@@ -55,10 +56,11 @@ public:
 
     // 磚塊資料結構
     enum class Tile : uint8_t {
-        flat = 0, // 可以通過的空地
-        dots = 1, // 地板上的小點點
-        pill = 2, // 翻轉規則的小球
-        wall = 3  // 不可通過的牆壁
+        flat          = 0,  // 空地
+        wall          = 1,  // 牆壁
+        dot           = 2,  // 點點
+        gate          = 3,  // 鬼屋的門
+        power_pellet  = 4,  // 神奇藥丸
     };
 
     int count = 0;                      // 時間計數器
@@ -68,8 +70,8 @@ public:
     static constexpr int dot_radius = 3;  // 點點半徑
     static constexpr int pill_radius = 8; // 藥丸半徑
     // 初始化地圖
-    static constexpr size_t map_width  = 18ULL;
-    static constexpr size_t map_height = 15ULL;
+    static constexpr size_t map_width  = 19ULL;
+    static constexpr size_t map_height = 16ULL;
     using row_type = std::array<Tile, map_width>;
     std::array<row_type, map_height> map;
 
@@ -80,7 +82,6 @@ public:
 
     // 位置資料結構
     struct Pos {
-    public:
         int x, y;
         MainWindow *parent = nullptr;
         inline Pos(const Pos& other) noexcept
@@ -116,49 +117,45 @@ public:
         friend inline bool operator != (const Pos& lhs, const Pos& rhs) noexcept {
             return (lhs.x != rhs.x || lhs.y != rhs.y);
         }
-        // 利用 Pos 取得 Tile 位置
-        inline Tile& tile() {
-            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
-            if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
-            return parent->map[y][x];
-        }
-        // 利用 Pos 取得 QPoint
-        inline QPoint get_point() const {
-            return QPoint(x, y);
-        }
-        // 利用 Pos 設定 Tile 資訊
-        inline void set_Tile(const Tile& tile) {
-            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
-            if (is_out_of_range) throw std::out_of_range("get_tile position out of range");
-            parent->map[y][x] = tile;
-        }
-        // 將地上的小點點吃掉
-        inline void eat_dots() {
-            _boundary_check();
-            // 如果是小點點則吃掉它
-            if (parent->map[y][x] == Tile::dots) {
-                parent->map[y][x] = Tile::flat;
-                parent->dots_amount -= 1;
-            }
-        }
-        // 將地上的小藥丸吃掉
-        inline void eat_pill() {
-            _boundary_check();
-            // 吃掉神奇小藥丸並生效
-            if (parent->map[y][x] == Tile::pill) {
-                parent->set_state_chasing();
-                QTimer::singleShot(5000, parent, &MainWindow::set_state_flashing);
-                QTimer::singleShot(7000, parent, &MainWindow::set_state_normal);
-                parent->map[y][x] = Tile::flat;
-                parent->dots_amount -= 1;
-            }
-        }
-    private:
-        inline void _boundary_check() const {
-            bool is_out_of_range = (x < 0) || (y < 0) || (x >= map_width) || (y >= map_height);
-            if (is_out_of_range) throw std::out_of_range("Position out of range");
-        }
     };
+
+    // 一般函數
+    void map_boundary_check(const Pos& pos) const {
+        bool x_out_of_range = (pos.x < 0) || (pos.x >= map_width) ;
+        bool y_out_of_range = (pos.y < 0) || (pos.y >= map_height);
+        if (x_out_of_range || y_out_of_range) {
+            throw std::out_of_range("Position out of map");
+        }
+    }
+    QPoint get_point(const Pos& pos) const {
+        return QPoint(pos.x, pos.y);
+    }
+    Tile   get_tile (const Pos& pos) const {
+        map_boundary_check(pos);
+        return map[pos.y][pos.x];
+    }
+    Tile&  get_tile (const Pos& pos) {
+        map_boundary_check(pos);
+        return map[pos.y][pos.x];
+    }
+    bool is_walkable(const Pos& pos) const {
+        bool is_not_wall = (get_tile(pos) != Tile::wall);
+        bool is_not_gate = (get_tile(pos) != Tile::gate);
+        return (is_not_gate && is_not_wall);
+    }
+    void try_eat_dot(const Pos& pos) {
+        if (get_tile(pos) != Tile::dot) return;
+        map[pos.y][pos.x] = Tile::flat;
+        dots_amount -= 1;
+    }
+    void try_eat_power_pellet(const Pos& pos) {
+        if (get_tile(pos) != Tile::power_pellet) return;
+        dots_amount -= 1;
+        set_state_chasing();
+        get_tile(pos) = Tile::flat;
+        QTimer::singleShot(5000, this, &MainWindow::set_state_flashing);
+        QTimer::singleShot(7000, this, &MainWindow::set_state_normal);
+    }
 
     // 物件: 小精靈
     class PacMan {
@@ -168,7 +165,7 @@ public:
         MainWindow *parent = nullptr;
         Direc direction = Direc::none;     // 現在的移動方向
         Direc direc_buffer = Direc::none;  // 移動方向緩衝區
-        Pos position = Pos(parent, 1, 1);  // 地圖位置
+        Pos position = Pos(parent, 10, 14); // 預設出生點位置
         const int pacman_speed = 6; // 小精靈移動的速度
         const int max_angle = 72;   // 最大張嘴角度
         int mouth_angle = 0;        // 當前張嘴角度
@@ -185,10 +182,10 @@ public:
                 next_destination += next_move;
             }
             // 撞牆時可以改變方向
-            bool move_is_invalid = (destination.tile() == Tile::wall);
+            bool move_is_valid = parent->is_walkable(destination);
             // 轉方向之後不能撞牆
-            bool next_move_is_valid = (next_destination.tile() != Tile::wall);
-            if (move_is_invalid || next_move_is_valid) {
+            bool next_move_is_valid = parent->is_walkable(next_destination);
+            if (!move_is_valid || next_move_is_valid) {
                 direc_buffer = new_direc;
             }
         }
@@ -200,6 +197,9 @@ public:
             position.parent = _parent_;
         }
         // 成員函數
+        inline Pos get_position() const {
+            return position;
+        }
         inline Pos get_move(Direc direc) {
             switch(direc) {
                 case Direc::left:  return Pos(parent, -1, +0);
@@ -248,18 +248,18 @@ public:
             // 取得目的地
             Pos move = get_move(direction);
             Pos destination = position + move;
-            if (destination.tile() == Tile::wall) {
+            if (!parent->is_walkable(destination)) {
                 pacman_count = 0;
             }
             // 完成一周期的循環
             if (pacman_count == 0) {
                 // 嘗試前進一格
-                if (destination.tile() != Tile::wall) {
+                if (parent->is_walkable(destination)) {
                     position = destination;
-                    // 把地上的小點點吃掉
-                    destination.eat_dots();
-                    // 把地上的小藥丸吃掉
-                    destination.eat_pill();
+                    // 嘗試把小點點吃掉
+                    parent->try_eat_dot(destination);
+                    // 嘗試把小藥丸吃掉
+                    parent->try_eat_power_pellet(destination);
                 }
                 // 更新方向
                 if (direc_buffer != Direc::none) {
@@ -273,7 +273,7 @@ public:
         inline void turn_right() { this->_turn(Direc::right); }
         inline void turn_up   () { this->_turn(Direc::up   ); }
         inline void turn_down () { this->_turn(Direc::down ); }
-    };
+    } player;
 
     // 物件: 鬼魂
     class Ghost {
@@ -299,19 +299,19 @@ public:
         static inline const QColor eaten_pupil  = normal_pupil;          // 被吃瞳孔
     protected:
         // 成員變數
-        State status = State::normal;            // 狀態
+        State status = State::normal;           // 狀態
         MainWindow *parent = nullptr;           // 主視窗
         Pos position = Pos(parent, 0, 0);       // 自身位置
         QColor normal_body = QColor(0, 0, 0);   // 正常身體
-        const int ghost_speed = 6;  // 鬼魂移動的速度
-        const int rghost_speed = 4; // 鬼魂被抓時的移速
+        const int ghost_speed = 6;              // 鬼魂移動的速度
+        const int rghost_speed = 4;             // 鬼魂被抓時的移速
         // 虛擬函數
         virtual Pos get_move();
         inline Ghost() noexcept {};
         inline virtual ~Ghost() noexcept = default;
-        inline virtual void init(MainWindow *_parent_, const Pos& pos, const QColor& body_color) {
-            position = pos;
+        inline virtual void init(MainWindow *_parent_, const Pos& init_pos, const QColor& body_color) {
             parent = _parent_;
+            position = init_pos;
             normal_body = body_color;
             position.parent = _parent_;
         }
@@ -417,10 +417,12 @@ public:
             uint8_t temp = (uint8_t)parent->state;
             status = static_cast<State>(temp);
         }
+        inline bool collides_with(const MainWindow::PacMan& pacman) {
+            return (position == pacman.get_position());
+        }
     };
 
-    // 宣告小精靈
-    PacMan player;
+    std::array<Ghost, 4> ghosts;
 
     // 讀取檔案 file_path 作為地圖
     bool load_map(const std::string& file_path) {
@@ -447,19 +449,24 @@ public:
                     }
                     // 點點
                     case ' ': {
-                        map[row][col] = Tile::dots;
+                        map[row][col] = Tile::dot;
                         dots_amount += 1;
                         break;
                     }
                     // 藥丸
                     case 'O': {
-                        map[row][col] = Tile::pill;
+                        map[row][col] = Tile::power_pellet;
                         dots_amount += 1;
                         break;
                     }
                     // 空地
                     case 'x': {
                         map[row][col] = Tile::flat;
+                        break;
+                    }
+                    // 鬼屋的門
+                    case '=': {
+                        map[row][col] = Tile::gate;
                         break;
                     }
                     // 未知符號
@@ -482,30 +489,45 @@ public:
                 int x = col * tile_size;
                 int y = row * tile_size;
                 // 繪製該格背景顏色
-                painter.setBrush(map[row][col] == Tile::wall ? Qt::blue : Qt::black);
+                QColor color;
+                switch (map[row][col]) {
+                    case Tile::wall: { color = QColor(0  , 0  , 255); break; }
+                    case Tile::gate: { color = QColor(216, 216, 200); break; }
+                    default:         { color = QColor(0  , 0  , 0  ); break; }
+                };
+                painter.setBrush(color);
                 painter.setPen(QPen(Qt::NoPen));
                 painter.drawRect(x, y, tile_size, tile_size);
                 // 繪製小點點
-                if (map[row][col] == Tile::dots) {
+                if (map[row][col] == Tile::dot) {
                     painter.setBrush(QColor(255, 184, 174));
                     painter.setRenderHint(QPainter::Antialiasing);
                     Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
-                    painter.drawEllipse(center.get_point(), dot_radius, dot_radius);
+                    painter.drawEllipse(get_point(center), dot_radius, dot_radius);
                 }
                 // 繪製小藥丸(3Hz)
                 int current_msec = QTime::currentTime().msec();
                 bool is_visible = (current_msec % 333) < 166;
-                if (map[row][col] == Tile::pill && is_visible) {
+                if (map[row][col] == Tile::power_pellet && is_visible) {
                     painter.setBrush(QColor(255, 204, 184));
                     painter.setRenderHint(QPainter::Antialiasing);
                     Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
-                    painter.drawEllipse(center.get_point(), pill_radius, pill_radius);
+                    painter.drawEllipse(get_point(center), pill_radius, pill_radius);
                 }
             }
         }
     }
     // 判斷是否過關
     bool has_passed() { return (dots_amount == 0); }
+    // 判斷小精靈是否被抓到
+    bool has_failed() {
+        if (state != GameState::normal) return false;
+        for (Ghost& ghost : ghosts) {
+            // 逐一檢查
+            if (ghost.collides_with(player)) return true;
+        }
+        return false;
+    }
 };
 
 #endif // MAINWINDOW_H
