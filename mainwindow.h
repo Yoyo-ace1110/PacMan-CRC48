@@ -6,13 +6,15 @@
 #include <cstdint>      // size_t
 #include <string>       // string
 #include <QMainWindow>  // 主視窗
-#include <QPainter>     // 畫筆工具
-#include <QPainterPath> // 進階畫筆
-#include <QKeyEvent>    // 鍵盤工具
-#include <QTimer>       // 計時工具
-#include <QPoint>       // 位置資訊
-#include <QTime>        // 獨立時間
-#include <QMessageBox>  // 彈出視窗
+#include <QCoreApplication> // 刷新畫面
+#include <QPainterPath>     // 進階畫筆
+#include <QMessageBox>      // 彈出視窗
+#include <QKeyEvent>        // 鍵盤工具
+#include <QPainter>         // 畫筆工具
+#include <QThread>          // 暫停時間
+#include <QTimer>           // 計時工具
+#include <QPoint>           // 位置資訊
+#include <QTime>            // 獨立時間
 using size_t = std::size_t;
 
 /* TODO:
@@ -64,13 +66,21 @@ public:
     };
 
     // 初始化變數
-    inline int count = 0;                 // 計時器
-    inline int score = 0;                 // 累積分數
-    inline int dots_amount = 0;           // 點點數量
+    int count = 0;              // 繪圖計時器
+    int score = 0;              // 累積的分數
+    int dots_amount = 0;        // 剩餘點點的數量
+    int freeze_timer = 0;       // 畫面定格剩餘時間
+    int pellet_timer = 0;       // 藥丸生效剩餘時間
+    bool is_frozen = false;     // 紀錄畫面是否定格
+    int ghosts_eaten_count = 0; // 已經吃掉的鬼魂數量
     GameState state = GameState::normal;  // 遊戲狀態
     static constexpr int tile_size = 30;  // 磁磚大小
     static constexpr int dot_radius = 2;  // 點點半徑
     static constexpr int pill_radius = 8; // 藥丸半徑
+    int scorebar_height = 30;                          // 橫條高度
+    int width  = map_width*tile_size;                  // 視窗寬度
+    int height = map_height*tile_size+scorebar_height; // 視窗高度
+
     // 初始化地圖
     static constexpr size_t map_width  = 19ULL;
     static constexpr size_t map_height = 16ULL;
@@ -85,11 +95,8 @@ public:
     // 位置資料結構
     struct Pos {
         int x, y;
-        MainWindow *parent = nullptr;
-        inline constexpr Pos(const Pos& other) noexcept
-            : x(other.x), y(other.y), parent(other.parent) {}
-        inline constexpr Pos(MainWindow *_parent_, int _x_, int _y_) noexcept
-            : x(_x_), y(_y_), parent(_parent_) {}
+        inline constexpr Pos(const Pos& other) noexcept : x(other.x), y(other.y) {}
+        inline constexpr Pos(int _x_, int _y_) noexcept : x(_x_),     y(_y_) {}
         inline constexpr Pos& operator = (const Pos& other) noexcept {
             x = other.x;
             y = other.y;
@@ -107,10 +114,10 @@ public:
             return (*this);
         }
         friend inline Pos operator + (const Pos& lhs, const Pos& rhs) noexcept {
-            return Pos(lhs.parent, lhs.x + rhs.x, lhs.y + rhs.y);
+            return Pos(lhs.x + rhs.x, lhs.y + rhs.y);
         }
         friend inline Pos operator - (const Pos& lhs, const Pos& rhs) noexcept {
-            return Pos(lhs.parent, lhs.x - rhs.x, lhs.y - rhs.y);
+            return Pos(lhs.x - rhs.x, lhs.y - rhs.y);
         }
         // 比較運算子
         friend inline bool operator == (const Pos& lhs, const Pos& rhs) noexcept {
@@ -149,14 +156,26 @@ public:
         if (get_tile(pos) != Tile::dot) return;
         map[pos.y][pos.x] = Tile::flat;
         dots_amount -= 1;
+        score += 10;
     }
     void try_eat_power_pellet(const Pos& pos) {
         if (get_tile(pos) != Tile::power_pellet) return;
+        score += 50;
         dots_amount -= 1;
         set_state_chasing();
+        ghosts_eaten_count = 0;
+        pellet_timer = 7 * fps;
         get_tile(pos) = Tile::flat;
-        QTimer::singleShot(5000, this, &MainWindow::set_state_flashing);
-        QTimer::singleShot(7000, this, &MainWindow::set_state_normal);
+    }
+    void update_pellet_timer() noexcept {
+        if (pellet_timer > 0) {
+            --pellet_timer;
+            if (pellet_timer  <= 2*fps) [[unlikely]] {
+                set_state_flashing();
+            } else if (pellet_timer == 0) [[unlikely]] {
+                set_state_normal();
+            }
+        }
     }
 
     // 物件: 小精靈
@@ -166,14 +185,14 @@ public:
         MainWindow *parent = nullptr;
         Direc direction = Direc::none;      // 現在的移動方向
         Direc direc_buffer = Direc::none;   // 移動方向緩衝區
-        Pos position = Pos(parent, 10, 14); // 預設出生點位置
+        Pos position = Pos(9, 14);          // 預設出生點位置
         static constexpr int radius = tile_size * 0.4;
-        const int pacman_speed = 6; // 小精靈移動的速度
+        const int pacman_speed = 6; // 移動速度
         const int max_angle = 72;   // 最大張嘴角度
         int mouth_angle = 0;        // 當前張嘴角度
         int angle_step  = 24;       // 每次張嘴的角位移
         // 轉動移動方向
-        inline void _turn(Direc new_direc) {
+        inline constexpr void _turn(Direc new_direc) noexcept {
             if (direc_buffer == new_direc) return;
             // 計算移動的向量
             Pos this_move = get_move(direction);
@@ -193,39 +212,52 @@ public:
         }
     public:
         // 建構子
-        inline PacMan() noexcept {}
-        inline void init(MainWindow *_parent_) {
+        inline constexpr PacMan() noexcept {}
+        inline constexpr void init(MainWindow *_parent_) noexcept {
             parent = _parent_;
-            position.parent = _parent_;
         }
         // 成員函數
-        inline Pos get_position() const {
+        inline constexpr Pos get_position() const noexcept {
             return position;
         }
-        inline Pos get_move(Direc direc) {
+        inline constexpr Pos get_move(Direc direc) const noexcept {
             switch(direc) {
-                case Direc::left:  return Pos(parent, -1, +0);
-                case Direc::right: return Pos(parent, +1, +0);
-                case Direc::up:    return Pos(parent, +0, -1);
-                case Direc::down:  return Pos(parent, +0, +1);
-                default:           return Pos(parent, +0, +0);
+                case Direc::left:  return Pos(-1, +0);
+                case Direc::right: return Pos(+1, +0);
+                case Direc::up:    return Pos(+0, -1);
+                case Direc::down:  return Pos(+0, +1);
+                default:           return Pos(+0, +0);
             }
         }
         // 繪製小精靈
-        inline void draw(QPainter& painter, const Pos& move, int count) {
-            // 設定前進比例
+        inline Pos get_pixel_pos() const noexcept {
+            // 格子座標
+            Pos move = get_move(direction);
+            Pos destination = position + move;
+            if (!parent->is_walkable(destination)) {
+                move = Pos(0, 0);
+            }
+            // 像素座標
+            int count = parent->count % (fps/pacman_speed);
             double ratio = count * (static_cast<double>(pacman_speed)/fps);
+            int offset_x = static_cast<double>((move.x * tile_size) * ratio);
+            int offset_y = static_cast<double>((move.y * tile_size) * ratio);
+            int center_x = position.x * tile_size + (tile_size / 2);
+            int center_y = position.y * tile_size + (tile_size / 2);
+            return Pos(center_x + offset_x, center_y + offset_y);
+        }
+        inline void draw(QPainter& painter, const Pos& move) {
             // 渲染相關設定
             painter.setRenderHint(QPainter::Antialiasing);  // 避免鋸齒狀
             painter.setBrush(Qt::yellow);                   // 黃色圓心
             painter.setPen(QPen(Qt::black, 1));             // 黑色外框
             // 計算張開嘴巴的角度
+            int base_angle;
             mouth_angle += angle_step;
             if (mouth_angle >= max_angle || mouth_angle <= 0) {
                 angle_step = -angle_step;
             }
-            int base_angle;
-            if (move.x == 0 && move.y == 0)     base_angle = 0;     // 預設向右
+            if (move.x == 0 && move.y == 0)     base_angle = 0;     // 預設
             else if (move.x > 0 && move.y == 0) base_angle = 0;     // 右
             else if (move.x < 0 && move.y == 0) base_angle = 180;   // 左
             else if (move.y < 0 && move.x == 0) base_angle = 90;    // 上
@@ -235,24 +267,17 @@ public:
             int start_angle = (base_angle + mouth_angle/2) * 16;
             int span_angle  = (360 - mouth_angle) * 16;
             // 繪製黃色扇形
-            int offset_x = static_cast<double>((move.x * tile_size) * ratio);
-            int offset_y = static_cast<double>((move.y * tile_size) * ratio);
-            int center_x = position.x * tile_size + (tile_size / 2);
-            int center_y = position.y * tile_size + (tile_size / 2);
-            Pos pixel = Pos(parent, center_x + offset_x, center_y + offset_y);
+            Pos pixel = get_pixel_pos();
             QRectF rect(pixel.x-radius, pixel.y-radius, radius*2, radius*2);
             painter.drawPie(rect, start_angle, span_angle);
         }
-        // 更新狀態並繪製
-        inline void update(QPainter& painter) {
+        // 更新狀態&繪製
+        inline void update() {
             // 計算相對於小精靈移動速度的計數器
             int pacman_count = parent->count % (fps/pacman_speed);
             // 取得目的地
             Pos move = get_move(direction);
             Pos destination = position + move;
-            if (!parent->is_walkable(destination)) {
-                pacman_count = 0;
-            }
             // 完成一周期的循環
             if (pacman_count == 0) {
                 // 嘗試前進一格
@@ -268,13 +293,18 @@ public:
                     direction = direc_buffer;
                 }
             }
-            this->draw(painter, move, pacman_count);
+        }
+        inline void paint(QPainter& painter) {
+            // 沒吃到鬼魂就繪製
+            if (parent->collided_ghost()) return;
+            Pos move = get_move(direction);
+            this->draw(painter, move);
         }
         // slots
-        inline void turn_left () { this->_turn(Direc::left ); }
-        inline void turn_right() { this->_turn(Direc::right); }
-        inline void turn_up   () { this->_turn(Direc::up   ); }
-        inline void turn_down () { this->_turn(Direc::down ); }
+        inline constexpr void turn_left () noexcept { this->_turn(Direc::left ); }
+        inline constexpr void turn_right() noexcept { this->_turn(Direc::right); }
+        inline constexpr void turn_up   () noexcept { this->_turn(Direc::up   ); }
+        inline constexpr void turn_down () noexcept { this->_turn(Direc::down ); }
     } player;
 
     // 物件: 鬼魂
@@ -291,7 +321,7 @@ public:
         static inline const QColor normal_eye   = QColor(255, 255, 255); // 正常眼睛
         static inline const QColor normal_pupil = QColor(33, 33, 255);   // 正常瞳孔
         static inline const QColor scared_body  = QColor(33, 33, 255);   // 驚嚇身體
-        static inline const QColor scared_eye   = QColor(255, 184, 174); // 驚嚇眼睛
+        static inline const QColor scared_eye   = QColor(216, 216, 200); // 驚嚇眼睛
         static inline const QColor scared_pupil = scared_eye;            // 驚嚇瞳孔
         static inline const QColor flash_body   = QColor(255, 255, 255); // 閃爍身體
         static inline const QColor flash_eye    = QColor(255, 0, 0);     // 閃爍眼睛
@@ -303,32 +333,30 @@ public:
         // 成員變數
         State status = State::normal;           // 狀態
         MainWindow *parent = nullptr;           // 主視窗
-        Pos position = Pos(parent, 0, 0);       // 自身位置
-        QColor normal_body = QColor(0, 0, 0);   // 正常身體
+        Pos position = Pos(0, 0);               // 自身位置
+        QColor normal_body = QColor(0, 0, 0);   // 正常身體顏色
         const int ghost_speed = 6;              // 鬼魂移動的速度
         const int rghost_speed = 4;             // 鬼魂被抓時的移速
         // 虛擬函數
-        virtual Pos get_move();
-        inline Ghost() noexcept {};
-        inline virtual ~Ghost() noexcept = default;
-        inline virtual void init(MainWindow *_parent_, const Pos& init_pos, const QColor& body_color) noexcept {
+        inline virtual Pos get_move() const noexcept { return Pos(0, 0); }
+        inline virtual void init(MainWindow *_parent_, const Pos& pos, const QColor& body_color) noexcept {
+            position = pos;
             parent = _parent_;
-            position = init_pos;
             normal_body = body_color;
-            position.parent = _parent_;
         }
         // 渲染鬼魂
-        inline void draw(QPainter& painter, const Pos& move) const noexcept {
+        inline void draw(QPainter& painter) const {
             // 計算平滑移動比例
             bool reverse = (parent->state != GameState::normal);
             const int speed = (reverse ? rghost_speed : ghost_speed);
             const double ratio = parent->count * (static_cast<double>(speed)/fps);
             // 計算像素位置
+            const Pos move = get_move();
             int offset_x = static_cast<double>((move.x * tile_size) * ratio);
             int offset_y = static_cast<double>((move.y * tile_size) * ratio);
             int center_x = position.x * tile_size + (tile_size / 2);
             int center_y = position.y * tile_size + (tile_size / 2);
-            Pos pixel = Pos(parent, center_x + offset_x, center_y + offset_y);
+            Pos pixel = Pos(center_x + offset_x, center_y + offset_y);
             // 判斷顏色
             QColor body_color, eye_color, pupil_color;
             switch (status) {
@@ -368,14 +396,11 @@ public:
                     pupil_color = eaten_pupil;
                     break;
                 }
-                default: {
-                    throw std::runtime_error("Unkown status");
-                    break;
-                }
+                default: throw std::runtime_error("Unkown status");
             }
             // 繪製身體與眼睛
             painter.setRenderHint(QPainter::Antialiasing);
-            int radius = tile_size * 0.4;
+            int radius = tile_size * 0.45;
             // 繪製鬼魂身體
             if (body_color != Qt::transparent) {
                 QPainterPath bodyPath;
@@ -385,21 +410,25 @@ public:
                 // 往下畫到右下角的身體邊緣
                 bodyPath.lineTo(pixel.x+radius, pixel.y+radius);
                 // 下半身: 3個波浪裙擺
-                int wave = (radius*2)/3;
-                bodyPath.lineTo(pixel.x + radius - wave * 0.5, pixel.y + radius - 4);
+                int h_offset = 3;
+                double wave = radius * 2.0 / 3.0;
+                bodyPath.lineTo(pixel.x + radius - wave * 0.5, pixel.y + radius - h_offset);
                 bodyPath.lineTo(pixel.x + radius - wave,       pixel.y + radius);
-                bodyPath.lineTo(pixel.x - radius + wave,       pixel.y + radius);
+                bodyPath.lineTo(pixel.x + radius - wave * 1.5, pixel.y + radius - h_offset);
+                bodyPath.lineTo(pixel.x + radius - wave * 2.0, pixel.y + radius);
+                bodyPath.lineTo(pixel.x + radius - wave * 2.5, pixel.y + radius - h_offset);
                 bodyPath.lineTo(pixel.x - radius,              pixel.y + radius);
                 bodyPath.closeSubpath();
+                // 同時繪製上去
                 painter.setBrush(body_color);
                 painter.setPen(QPen(Qt::NoPen));
                 painter.drawPath(bodyPath);
             }
             // 繪製眼白
             painter.setBrush(eye_color);
-            int eye_width = radius * 0.4;
-            int eye_height = radius * 0.6;
-            int eye_offset_x = radius * 0.35;
+            int eye_width = radius * 0.35;
+            int eye_height = radius * 0.35;
+            int eye_offset_x = radius * 0.4;
             QPoint left_eye (pixel.x - eye_offset_x, pixel.y - radius * 0.1);
             QPoint right_eye(pixel.x + eye_offset_x, pixel.y - radius * 0.1);
             painter.drawEllipse(left_eye,  eye_width, eye_height);
@@ -412,6 +441,13 @@ public:
             painter.drawEllipse(right_eye + pupil_offset, pupil_radius, pupil_radius);
         }
     public:
+        // 虛擬函數
+        inline Ghost() noexcept = default;
+        inline virtual ~Ghost() noexcept = default;
+        // 成員函數
+        inline bool collides_with(const MainWindow::PacMan& pacman) const noexcept {
+            return (position == pacman.get_position());
+        }
         inline void update_status() noexcept {
             if (status == State::eaten) return;
             // 將主視窗的 GameState 轉為 Ghost::State
@@ -422,19 +458,38 @@ public:
             return status;
         }
         inline void set_status(State _status_) noexcept { status = _status_; }
-        inline bool collides_with(const MainWindow::PacMan& pacman) const noexcept {
-            return (position == pacman.get_position());
+        inline void update() noexcept { update_status(); }
+        inline void paint(QPainter& painter) {
+            // 沒被吃掉就繪製
+            if (parent->collided_ghost() != this) {
+                this->draw(painter);
+            }
         }
     };
 
-    std::array<Ghost, 4> ghosts;
+    // 繼承: 紅鬼
+    class Blinky : public Ghost {
+    public:
+        inline Blinky() noexcept : Ghost() {}
+        inline void init(MainWindow *_parent_) noexcept {
+            Ghost::init(_parent_, Pos(9, 1), QColor(255, 0, 0));
+        }
+        inline Pos get_move() const noexcept override {
+            return Pos(0, 0);
+        }
+    } blinky;
 
+    // 鬼魂指標陣列
+    std::array<Ghost*, 1> ghosts = { &blinky };
+
+    // 宣告主迴圈
+    void main_loop();
     // 讀取地圖
-    bool load_map(const std::string& file_path) {
+    void load_map(const std::string& file_path) {
         // 嘗試讀取地圖檔案
         dots_amount = 0;
         std::ifstream file(file_path);
-        if (!file.is_open()) return false;
+        if (!file.is_open()) throw std::runtime_error("Cannot open the map");
         // 解析地圖檔案
         std::string line = "";
         for (size_t row = 0; std::getline(file, line) && row < map_height; ++row) {
@@ -445,7 +500,9 @@ public:
                  * '1' 視為牆壁
                  * ' ' 視為點點
                  * 'x' 視為空地
-                 * 若前兩者都不符合則補為空地 */
+                 * 'O' 視為藥丸
+                 * '=' 視為鬼屋的門
+                 */
                 switch (character) {
                     // 牆壁
                     case '1': {
@@ -484,7 +541,6 @@ public:
         }
         // 關閉地圖檔案(讀取)
         file.close();
-        return true;
     }
     // 繪製地圖
     void draw_map(QPainter& painter) const noexcept {
@@ -507,7 +563,7 @@ public:
                 if (map[row][col] == Tile::dot) {
                     painter.setBrush(QColor(255, 184, 174));
                     painter.setRenderHint(QPainter::Antialiasing);
-                    Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
+                    Pos center = Pos(x + tile_size/2, y + tile_size/2);
                     painter.drawEllipse(get_point(center), dot_radius, dot_radius);
                 }
                 // 繪製小藥丸(3Hz)
@@ -516,36 +572,83 @@ public:
                 if (map[row][col] == Tile::power_pellet && is_visible) {
                     painter.setBrush(QColor(255, 204, 184));
                     painter.setRenderHint(QPainter::Antialiasing);
-                    Pos center = Pos(this, x + tile_size/2, y + tile_size/2);
+                    Pos center = Pos(x + tile_size/2, y + tile_size/2);
                     painter.drawEllipse(get_point(center), pill_radius, pill_radius);
                 }
             }
         }
     }
-    // 判斷是否過關
-    bool handle_passed() noexcept {
+    // 繪製狀態列
+    void draw_scorebar(QPainter& painter) const noexcept {
+        int start_y = map_height*tile_size;
+        // 繪製背景
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0, 0, 0));
+        painter.drawRect(0, start_y, width, scorebar_height);
+        // 繪製分數
+        painter.setPen(Qt::white);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setFont(QFont("Arial", 11, QFont::Bold));
+        QString score_text = "SCORE: " + QString::number(score);
+        QRect text_rect(10, start_y, width - 20, scorebar_height);
+        painter.drawText(text_rect, Qt::AlignLeft | Qt::AlignVCenter, score_text);
+    }
+    // 繪製鬼魂們
+    void paint_ghosts(QPainter& painter) const noexcept {
+        for (Ghost* ghost : ghosts) {
+            ghost->paint(painter);
+        }
+    }
+    // 更新鬼魂們
+    void update_ghosts() const noexcept {
+        for (Ghost* ghost : ghosts) {
+            ghost->update();
+        }
+    }
+    // 處理過關邏輯
+    void handle_passed() noexcept {
         // 確保地上小點點被吃光
         if (dots_amount != 0) [[likely]] return;
         QMessageBox::information(this, "Game Over", "You Win!");
         this->close();
     }
-    // 判斷小精靈是否被抓到
-    void handle_collision() noexcept {
-        bool normal_state = (state == GameState::normal);
-        for (Ghost& ghost : ghosts) {
-            // 避免重複被吃兩次
-            bool was_eaten = (ghost.get_status() == Ghost::State::eaten);
-            if (ghost.collides_with(player) && !was_eaten) [unlikely] {
-                if (normal_state) [[unlikely]] {
-                    // 正常情況撞到 -> 輸了
-                    QMessageBox::information(this, "Game Over", "You lose");
-                    this->close();
-                } else [[likely]] {
-                    // TODO: 小精靈把鬼魂吃掉
-                    ghost.set_status(Ghost::State::eaten);
-                }
+    // 找出相撞鬼魂
+    Ghost* collided_ghost() noexcept {
+        for (Ghost* ghost : ghosts) {
+            bool was_eaten = (ghost->get_status() == Ghost::State::eaten);
+            if (ghost->collides_with(player) && !was_eaten) [[unlikely]] {
+                return ghost;
             }
         }
+        return nullptr;
+    }
+    // 處理碰撞邏輯
+    void handle_collision() noexcept {
+        if (!collided_ghost()) return;
+        Ghost* ghost = collided_ghost();
+        bool normal_state = (state == GameState::normal);
+        if (normal_state) [[unlikely]] {
+            // 正常情況撞到 -> 輸了
+            QMessageBox::information(this, "Game Over", "You lose");
+            this->close();
+        } else [[likely]] {
+            // 小精靈把鬼魂吃掉 -> 得分
+            ghost->set_status(Ghost::State::eaten);
+            score += (200 << ghosts_eaten_count++);
+            freeze_timer = 0.5*fps;
+            is_frozen = true;
+        }
+    }
+    // 吃掉鬼魂得分畫面
+    void paint_eaten_score(QPainter& painter) noexcept {
+        painter.setPen(QColor(216, 216, 200));
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setFont(QFont("Arial", 11, QFont::Bold));
+        int offset = tile_size * 0.75;
+        int rect_size = tile_size * 1.5;
+        QPoint point = get_point(player.get_pixel_pos());
+        QRect text_rect(point.x()-offset, point.y()-offset, rect_size, rect_size);
+        painter.drawText(text_rect, Qt::AlignCenter, QString::number(200<<ghosts_eaten_count));
     }
 };
 

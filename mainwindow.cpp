@@ -12,13 +12,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->setupUi(this);
     ui->centralwidget->setAttribute(Qt::WA_TranslucentBackground);
     ui->centralwidget->setStyleSheet("background:transparent;");
-    // 嘗試載入地圖
-    std::string map_path = "Map.txt";
-    if (!load_map(map_path)) throw std::runtime_error("Cannot load map from file: "+map_path);
+    // 載入地圖
+    load_map("Map.txt");
     // 初始化視窗
     setWindowTitle("PacMan-CRC48");                 // 設定視窗標題
-    int width  = map_width *tile_size;              // 設定視窗寬度
-    int height = map_height*tile_size + 30;         // 設定視窗高度
     ui->centralwidget->setFixedSize(width, height); // 套用至畫布
     this->adjustSize();                             // 微調大小
     // 載入深色主題
@@ -30,25 +27,47 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     } else throw std::runtime_error("qss not found!");
     // 設定計時器
     timer = new QTimer(this); // 連接到視窗更新
-    connect(timer, &QTimer::timeout, this, QOverload<>::of(&MainWindow::update));
+    connect(timer, &QTimer::timeout, this, &MainWindow::main_loop);
     timer->start(1000 / fps); // 每 1/fps 秒更新一次畫面
-    // 建立小精靈 & 繪製到螢幕視窗
+    // 建立小精靈
     player.init(this);
+    // 建立鬼魂
+    blinky.init(this);
+    // 繪製到螢幕視窗
     this->update();
+}
+
+// 更新一次狀態
+void MainWindow::main_loop() {
+    // 定格處理
+    if (is_frozen) [[unlikely]] {
+        freeze_timer -= 1;
+        if (freeze_timer <= 0) {
+            is_frozen = false;
+        }
+        repaint();
+        return;
+    }
+    // 正常情況
+    handle_collision();     // 碰撞偵測
+    handle_passed();        // 判斷是否過關
+    update_ghosts();        // 更新鬼魂們
+    player.update();        // 更新小精靈
+    repaint();              // 確保繪製
+    count += 1;             // 計數器遞增
+    count %= (fps*3600);    // 循環以避免溢位
+    update_pellet_timer();  // 更新藥丸生效時間
 }
 
 // 繪製一幀的畫面
 void MainWindow::paintEvent(QPaintEvent *event) {
-    QPainter painter(this); // 建立畫筆
+    QPainter painter(this);
     draw_map(painter);      // 繪製地圖
-    player.update(painter); // 繪製小精靈
-    // 遊戲結束判斷
-    handle_collision();
-    if (has_passed()) [[unlikely]] {
-        QMessageBox::information(this, "Game Over", "You Win!");
-    }
-    count += 1;             // 計數器遞增
-    count %= (fps*3600);    // 循環以避免溢位
+    player.paint(painter);  // 繪製小精靈
+    paint_ghosts(painter);  // 繪製鬼魂們
+    draw_scorebar(painter); // 繪製狀態列
+    // 定格畫面繪製 (得分)
+    if (is_frozen) [[unlikely]] paint_eaten_score(painter);
 }
 
 // signals
