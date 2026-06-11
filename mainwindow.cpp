@@ -4,7 +4,6 @@
 #include <string>    // std::string
 #include <QFile>     // QFile
 #include <QTimer>    // QTimer
-#include <windows.h> // system
 
 MainWindow::~MainWindow() {delete ui;}
 
@@ -17,11 +16,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     std::string map_path = "Map.txt";
     if (!load_map(map_path)) throw std::runtime_error("Cannot load map from file: "+map_path);
     // 初始化視窗
-    setWindowTitle("PacMan-CRC48"); // 設定視窗標題
-    system("chcp 65001 > nul");     // 避免亂碼
-    int width = map_width*tile_size, height = map_height*tile_size; // 設定視窗大小
-    ui->centralwidget->setFixedSize(width, height);                 // 套用至中央畫布
-    this->adjustSize();                                             // 微調大小
+    setWindowTitle("PacMan-CRC48");                 // 設定視窗標題
+    int width  = map_width *tile_size;              // 設定視窗寬度
+    int height = map_height*tile_size + 30;         // 設定視窗高度
+    ui->centralwidget->setFixedSize(width, height); // 套用至畫布
+    this->adjustSize();                             // 微調大小
     // 載入深色主題
     QFile file("yo_stylesheet.qss");
     if (file.open(QFile::ReadOnly | QFile::Text)) {
@@ -43,22 +42,13 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     QPainter painter(this); // 建立畫筆
     draw_map(painter);      // 繪製地圖
     player.update(painter); // 繪製小精靈
+    // 遊戲結束判斷
+    handle_collision();
+    if (has_passed()) [[unlikely]] {
+        QMessageBox::information(this, "Game Over", "You Win!");
+    }
     count += 1;             // 計數器遞增
     count %= (fps*3600);    // 循環以避免溢位
-    // 遊戲結束判斷
-    if (has_passed()) {
-        QMessageBox::information(
-            this,
-            "Game Over",
-            "You Win!"
-        );
-    } else if (has_failed()) {
-        QMessageBox::information(
-            this,
-            "Game Over",
-            "You lose"
-        );
-    }
 }
 
 // signals
@@ -67,21 +57,22 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         case Qt::Key_Left:
         case Qt::Key_A:
             player.turn_left();
-            break;
+            return;
         case Qt::Key_Right:
         case Qt::Key_D:
             player.turn_right();
-            break;
+            return;
         case Qt::Key_Up:
         case Qt::Key_W:
             player.turn_up();
-            break;
+            return;
         case Qt::Key_Down:
         case Qt::Key_S:
             player.turn_down();
-            break;
-        default:
+            return;
+        default: {
             QMainWindow::keyPressEvent(event);
             return;
+        }
     }
 }

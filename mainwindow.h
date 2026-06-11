@@ -63,11 +63,13 @@ public:
         power_pellet  = 4,  // 神奇藥丸
     };
 
-    int count = 0;                      // 時間計數器
-    int dots_amount = 0;                // 點點的數量
+    // 初始化變數
+    inline int count = 0;                 // 計時器
+    inline int score = 0;                 // 累積分數
+    inline int dots_amount = 0;           // 點點數量
     GameState state = GameState::normal;  // 遊戲狀態
     static constexpr int tile_size = 30;  // 磁磚大小
-    static constexpr int dot_radius = 3;  // 點點半徑
+    static constexpr int dot_radius = 2;  // 點點半徑
     static constexpr int pill_radius = 8; // 藥丸半徑
     // 初始化地圖
     static constexpr size_t map_width  = 19ULL;
@@ -76,19 +78,19 @@ public:
     std::array<row_type, map_height> map;
 
     // 設定遊戲狀態
-    void set_state_normal   () { state = GameState::normal; }
-    void set_state_chasing  () { state = GameState::chasing; }
-    void set_state_flashing () { state = GameState::flashing; }
+    constexpr void set_state_normal   () noexcept { state = GameState::normal; }
+    constexpr void set_state_chasing  () noexcept { state = GameState::chasing; }
+    constexpr void set_state_flashing () noexcept { state = GameState::flashing; }
 
     // 位置資料結構
     struct Pos {
         int x, y;
         MainWindow *parent = nullptr;
-        inline Pos(const Pos& other) noexcept
+        inline constexpr Pos(const Pos& other) noexcept
             : x(other.x), y(other.y), parent(other.parent) {}
-        inline Pos(MainWindow *_parent_, int _x_, int _y_) noexcept
+        inline constexpr Pos(MainWindow *_parent_, int _x_, int _y_) noexcept
             : x(_x_), y(_y_), parent(_parent_) {}
-        inline Pos& operator = (const Pos& other) noexcept {
+        inline constexpr Pos& operator = (const Pos& other) noexcept {
             x = other.x;
             y = other.y;
             return (*this);
@@ -134,7 +136,7 @@ public:
         map_boundary_check(pos);
         return map[pos.y][pos.x];
     }
-    Tile&  get_tile (const Pos& pos) {
+    Tile&  get_tile (const Pos& pos)       {
         map_boundary_check(pos);
         return map[pos.y][pos.x];
     }
@@ -160,12 +162,12 @@ public:
     // 物件: 小精靈
     class PacMan {
     private:
-        static constexpr int radius = tile_size * 0.4;
         // 成員變數
         MainWindow *parent = nullptr;
-        Direc direction = Direc::none;     // 現在的移動方向
-        Direc direc_buffer = Direc::none;  // 移動方向緩衝區
+        Direc direction = Direc::none;      // 現在的移動方向
+        Direc direc_buffer = Direc::none;   // 移動方向緩衝區
         Pos position = Pos(parent, 10, 14); // 預設出生點位置
+        static constexpr int radius = tile_size * 0.4;
         const int pacman_speed = 6; // 小精靈移動的速度
         const int max_angle = 72;   // 最大張嘴角度
         int mouth_angle = 0;        // 當前張嘴角度
@@ -309,14 +311,14 @@ public:
         virtual Pos get_move();
         inline Ghost() noexcept {};
         inline virtual ~Ghost() noexcept = default;
-        inline virtual void init(MainWindow *_parent_, const Pos& init_pos, const QColor& body_color) {
+        inline virtual void init(MainWindow *_parent_, const Pos& init_pos, const QColor& body_color) noexcept {
             parent = _parent_;
             position = init_pos;
             normal_body = body_color;
             position.parent = _parent_;
         }
         // 渲染鬼魂
-        inline void draw(QPainter& painter, const Pos& move) {
+        inline void draw(QPainter& painter, const Pos& move) const noexcept {
             // 計算平滑移動比例
             bool reverse = (parent->state != GameState::normal);
             const int speed = (reverse ? rghost_speed : ghost_speed);
@@ -410,21 +412,24 @@ public:
             painter.drawEllipse(right_eye + pupil_offset, pupil_radius, pupil_radius);
         }
     public:
-        // inline State get_status() const { return status; }
-        // inline void set_status(State new_status) { status = new_status; }
-        inline void update_status() {
+        inline void update_status() noexcept {
+            if (status == State::eaten) return;
             // 將主視窗的 GameState 轉為 Ghost::State
             uint8_t temp = (uint8_t)parent->state;
             status = static_cast<State>(temp);
         }
-        inline bool collides_with(const MainWindow::PacMan& pacman) {
+        inline State get_status() const noexcept {
+            return status;
+        }
+        inline void set_status(State _status_) noexcept { status = _status_; }
+        inline bool collides_with(const MainWindow::PacMan& pacman) const noexcept {
             return (position == pacman.get_position());
         }
     };
 
     std::array<Ghost, 4> ghosts;
 
-    // 讀取檔案 file_path 作為地圖
+    // 讀取地圖
     bool load_map(const std::string& file_path) {
         // 嘗試讀取地圖檔案
         dots_amount = 0;
@@ -482,7 +487,7 @@ public:
         return true;
     }
     // 繪製地圖
-    void draw_map(QPainter& painter) {
+    void draw_map(QPainter& painter) const noexcept {
         for (int row = 0; row < map_height; ++row) {
             for (int col = 0; col < map_width; ++col) {
                 // 計算每一格的繪製位置
@@ -518,15 +523,29 @@ public:
         }
     }
     // 判斷是否過關
-    bool has_passed() { return (dots_amount == 0); }
+    bool handle_passed() noexcept {
+        // 確保地上小點點被吃光
+        if (dots_amount != 0) [[likely]] return;
+        QMessageBox::information(this, "Game Over", "You Win!");
+        this->close();
+    }
     // 判斷小精靈是否被抓到
-    bool has_failed() {
-        if (state != GameState::normal) return false;
+    void handle_collision() noexcept {
+        bool normal_state = (state == GameState::normal);
         for (Ghost& ghost : ghosts) {
-            // 逐一檢查
-            if (ghost.collides_with(player)) return true;
+            // 避免重複被吃兩次
+            bool was_eaten = (ghost.get_status() == Ghost::State::eaten);
+            if (ghost.collides_with(player) && !was_eaten) [unlikely] {
+                if (normal_state) [[unlikely]] {
+                    // 正常情況撞到 -> 輸了
+                    QMessageBox::information(this, "Game Over", "You lose");
+                    this->close();
+                } else [[likely]] {
+                    // TODO: 小精靈把鬼魂吃掉
+                    ghost.set_status(Ghost::State::eaten);
+                }
+            }
         }
-        return false;
     }
 };
 
