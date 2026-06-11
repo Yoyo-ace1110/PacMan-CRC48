@@ -207,11 +207,11 @@ public:
         }
         inline constexpr Pos get_move(Direc direc) const noexcept {
             switch(direc) {
-                case Direc::left:  return Pos(-1, +0);
-                case Direc::right: return Pos(+1, +0);
-                case Direc::up:    return Pos(+0, -1);
-                case Direc::down:  return Pos(+0, +1);
-                default:           return Pos(+0, +0);
+            case Direc::left:  return Pos(-1, +0);
+            case Direc::right: return Pos(+1, +0);
+            case Direc::up:    return Pos(+0, -1);
+            case Direc::down:  return Pos(+0, +1);
+            default:           return Pos(+0, +0);
             }
         }
         // 繪製小精靈
@@ -359,43 +359,43 @@ public:
             // 判斷顏色
             QColor body_color, eye_color, pupil_color;
             switch (status) {
-                // 正常狀態
-                case State::normal: {
-                    eye_color   = normal_eye;
-                    body_color  = normal_body;
-                    pupil_color = normal_pupil;
-                    break;
-                }
-                // 驚嚇狀態
-                case State::scared: {
-                    eye_color   = scared_eye;
+            // 正常狀態
+            case State::normal: {
+                eye_color   = normal_eye;
+                body_color  = normal_body;
+                pupil_color = normal_pupil;
+                break;
+            }
+            // 驚嚇狀態
+            case State::scared: {
+                eye_color   = scared_eye;
+                body_color  = scared_body;
+                pupil_color = scared_pupil;
+                break;
+            }
+            // 閃爍狀態
+            case State::flashing: {
+                int current_msec = QTime::currentTime().msec();
+                bool toggle = (current_msec % 333) < 166;
+                if (toggle) {
                     body_color  = scared_body;
+                    eye_color   = scared_eye;
                     pupil_color = scared_pupil;
-                    break;
+                } else {
+                    body_color  = flash_body;
+                    eye_color   = flash_eye;
+                    pupil_color = flash_pupil;
                 }
-                // 閃爍狀態
-                case State::flashing: {
-                    int current_msec = QTime::currentTime().msec();
-                    bool toggle = (current_msec % 333) < 166;
-                    if (toggle) {
-                        body_color  = scared_body;
-                        eye_color   = scared_eye;
-                        pupil_color = scared_pupil;
-                    } else {
-                        body_color  = flash_body;
-                        eye_color   = flash_eye;
-                        pupil_color = flash_pupil;
-                    }
-                    break;
-                }
-                // 被吃掉了
-                case State::eaten: {
-                    body_color  = eaten_body;
-                    eye_color   = eaten_eye;
-                    pupil_color = eaten_pupil;
-                    break;
-                }
-                default: throw std::runtime_error("Unkown status");
+                break;
+            }
+            // 被吃掉了
+            case State::eaten: {
+                body_color  = eaten_body;
+                eye_color   = eaten_eye;
+                pupil_color = eaten_pupil;
+                break;
+            }
+            default: throw std::runtime_error("Unkown status");
             }
             // 繪製身體與眼睛
             painter.setRenderHint(QPainter::Antialiasing);
@@ -543,38 +543,38 @@ public:
                  * '=' 視為鬼屋的門
                  */
                 switch (character) {
-                    // 牆壁
-                    case '1': {
-                        map[row][col] = Tile::wall;
-                        break;
-                    }
-                    // 點點
-                    case ' ': {
-                        map[row][col] = Tile::dot;
-                        dots_amount += 1;
-                        break;
-                    }
-                    // 藥丸
-                    case 'O': {
-                        map[row][col] = Tile::power_pellet;
-                        dots_amount += 1;
-                        break;
-                    }
-                    // 空地
-                    case 'x': {
-                        map[row][col] = Tile::flat;
-                        break;
-                    }
-                    // 鬼屋的門
-                    case '=': {
-                        map[row][col] = Tile::gate;
-                        break;
-                    }
-                    // 未知符號
-                    default: {
-                        std::string msg = "Error: Unknown character ";
-                        throw std::invalid_argument(msg + character);
-                    }
+                // 牆壁
+                case '1': {
+                    map[row][col] = Tile::wall;
+                    break;
+                }
+                // 點點
+                case ' ': {
+                    map[row][col] = Tile::dot;
+                    dots_amount += 1;
+                    break;
+                }
+                // 藥丸
+                case 'O': {
+                    map[row][col] = Tile::power_pellet;
+                    dots_amount += 1;
+                    break;
+                }
+                // 空地
+                case 'x': {
+                    map[row][col] = Tile::flat;
+                    break;
+                }
+                // 鬼屋的門
+                case '=': {
+                    map[row][col] = Tile::gate;
+                    break;
+                }
+                // 未知符號
+                default: {
+                    std::string msg = "Error: Unknown character ";
+                    throw std::invalid_argument(msg + character);
+                }
                 };
             }
         }
@@ -591,9 +591,9 @@ public:
                 // 繪製該格背景顏色
                 QColor color;
                 switch (map[row][col]) {
-                    case Tile::wall: { color = QColor(0  , 0  , 255); break; }
-                    case Tile::gate: { color = QColor(216, 216, 200); break; }
-                    default:         { color = QColor(0  , 0  , 0  ); break; }
+                case Tile::wall: { color = QColor(0  , 0  , 255); break; }
+                case Tile::gate: { color = QColor(216, 216, 200); break; }
+                default:         { color = QColor(0  , 0  , 0  ); break; }
                 };
                 painter.setBrush(color);
                 painter.setPen(QPen(Qt::NoPen));
@@ -694,22 +694,3 @@ public:
 };
 
 #endif // MAINWINDOW_H
-
-/*
-                if (direc_buffer == new_direc) return;
-                // 計算移動的向量
-                Pos this_move = get_move(direction);
-                Pos next_move = get_move(new_direc);
-                Pos destination = position+this_move;
-                Pos next_destination = destination;
-                if (this_move != next_move) [[likely]] {
-                    next_destination += next_move;
-                }
-                // 撞牆時可以改變方向
-                bool move_is_valid = parent->is_walkable(destination);
-                // 轉方向之後不能撞牆
-                bool next_move_is_valid = parent->is_walkable(next_destination);
-                if (!move_is_valid || next_move_is_valid) {
-                    direc_buffer = new_direc;
-                }
-            */
