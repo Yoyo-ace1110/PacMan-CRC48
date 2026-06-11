@@ -33,6 +33,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     player.init(this);
     // 建立鬼魂
     blinky.init(this);
+    pinky.init(this);
+    inky.init(this);
+    clyde.init(this);
     // 繪製到螢幕視窗
     this->update();
 }
@@ -63,8 +66,8 @@ void MainWindow::main_loop() {
 void MainWindow::paintEvent(QPaintEvent *event) {
     QPainter painter(this);
     draw_map(painter);      // 繪製地圖
-    player.paint(painter);  // 繪製小精靈
     paint_ghosts(painter);  // 繪製鬼魂們
+    player.paint(painter);  // 繪製小精靈
     draw_scorebar(painter); // 繪製狀態列
     // 定格畫面繪製 (得分)
     if (is_frozen) [[unlikely]] paint_eaten_score(painter);
