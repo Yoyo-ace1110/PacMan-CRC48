@@ -97,7 +97,8 @@ public:
 
     // 位置資料結構
     struct Pos {
-        int x, y;
+        int x = 0, y = 0;
+        inline constexpr Pos() noexcept {}
         inline constexpr Pos(const Pos& other) noexcept : x(other.x), y(other.y) {}
         inline constexpr Pos(int _x_, int _y_) noexcept : x(_x_),     y(_y_) {}
         inline constexpr Pos& operator = (const Pos& other) noexcept {
@@ -208,6 +209,9 @@ public:
         inline constexpr Pos get_position() const noexcept {
             return position;
         }
+        inline constexpr Direc get_direction() const noexcept {
+            return direction;
+        }
         inline constexpr Pos get_move(Direc direc) const noexcept {
             switch(direc) {
             case Direc::left:  return Pos(-1, +0);
@@ -279,7 +283,7 @@ public:
                 // 更新方向
                 bool buffer_is_not_none = (direc_buffer != Direc::none);
                 bool buffer_walkable = parent->is_walkable(get_move(direc_buffer));
-                bool destination_walkable = parent->is_walkable(parent->get_tile(destination));
+                bool destination_walkable = parent->is_walkable(destination);
                 if (buffer_is_not_none && (buffer_walkable || !destination_walkable)) {
                     direction = direc_buffer;
                 }
@@ -356,7 +360,7 @@ public:
                 case State::normal:     {return normal_speed;}
                 case State::scared:     {return scared_speed;}
                 case State::flashing:   {return scared_speed;}
-                default                 {return 0;          }
+                default:                {return 0;          }
             };
         }
         // 方向向量
@@ -468,8 +472,9 @@ public:
         // 虛擬函數
         inline Ghost() noexcept = default;
         inline virtual ~Ghost() noexcept = default;
-        inline virtual void update_direction() noexcept;
+        inline virtual void update_direction() noexcept {};
         // 成員函數
+        inline Pos get_position() const noexcept { return position; }
         inline Pos get_spawn_pos() const noexcept { return spawn_pos; }
         inline State get_status() const noexcept { return status; }
         inline void set_status(State _status_) noexcept { status = _status_; }
@@ -582,7 +587,7 @@ public:
         }
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
-            Pos target_pos = parent->pacman.get_position();
+            Pos target_pos = parent->player.get_position();
             BFS_path(target_pos);
             // 跟著小精靈走
             if (!best_path.empty()) {
@@ -618,7 +623,7 @@ public:
                     best_path.erase(best_path.begin());
                 }
                 if (best_path.empty()) {
-                    Pos escape_target;
+                    Pos escape_target = Pos(0, 0);
                     do {
                         escape_target.x = rand() % map_width;
                         escape_target.y = rand() % map_height;
@@ -629,8 +634,8 @@ public:
             } 
             // 處理正常狀態：伏擊 PacMan 前方 4 格
             else {
-                Pos pac_pos = parent->pacman.get_position();
-                Direc pac_dir = parent->pacman.get_direction();
+                Pos pac_pos = parent->player.get_position();
+                Direc pac_dir = parent->player.get_direction();
 
                 // 計算前方 4 格的偏移量
                 Pos offset = Pos(0, 0);
@@ -675,8 +680,8 @@ public:
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
             // 計算前方 2 格的基準點
-            Pos pac_pos = parent->pacman.get_position();
-            Direc pac_dir = parent->pacman.get_direction();
+            Pos pac_pos = parent->player.get_position();
+            Direc pac_dir = parent->player.get_direction();
             Pos offset = Pos(0, 0);
             switch (pac_dir) {
                 case Direc::left:  offset = Pos(-2,  0); break;
@@ -688,7 +693,7 @@ public:
             Pos pivot_pos = pac_pos + offset;
             Pos blinky_pos = parent->blinky.get_position();
             // 目標點 = Blinky + 2 * (基準點 - Blinky)
-            Pos target_pos;
+            Pos target_pos = Pos(0, 0);
             target_pos.x = blinky_pos.x + 2 * (pivot_pos.x - blinky_pos.x);
             target_pos.y = blinky_pos.y + 2 * (pivot_pos.y - blinky_pos.y);
             // 執行 BFS
@@ -717,11 +722,11 @@ public:
         }
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
-            Pos pac_pos = parent->pacman.get_position();
+            Pos pac_pos = parent->player.get_position();
             // 計算曼哈頓距離
             int distance = std::abs(position.x - pac_pos.x) + std::abs(position.y - pac_pos.y);
             // 根據距離決定目標點
-            Pos target_pos;
+            Pos target_pos = Pos(0, 0);
             if (distance >= 8) { target_pos = pac_pos; } 
             else { target_pos = spawn_pos; }
             // 執行 BFS
