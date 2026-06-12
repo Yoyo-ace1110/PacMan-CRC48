@@ -1,11 +1,14 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <array>        // std::array
-#include <fstream>      // 操作檔案
-#include <cstdint>      // size_t
-#include <string>       // string
-#include <QMainWindow>  // 主視窗
+#include <queue>            // std::queue
+#include <array>            // std::array
+#include <vector>           // std::vector
+#include <string>           // string
+#include <cstdint>          // size_t
+#include <fstream>          // 操作檔案
+#include <unordered_map>    // BFS
+#include <QMainWindow>      // 主視窗
 #include <QCoreApplication> // 刷新畫面
 #include <QPainterPath>     // 進階畫筆
 #include <QMessageBox>      // 彈出視窗
@@ -274,7 +277,10 @@ public:
                     parent->try_eat_power_pellet(destination);
                 }
                 // 更新方向
-                if (direc_buffer != Direc::none) {
+                bool buffer_is_not_none = (direc_buffer != Direc::none);
+                bool buffer_walkable = parent->is_walkable(get_move(direc_buffer));
+                bool destination_walkable = parent->is_walkable(parent->get_tile(destination));
+                if (buffer_is_not_none && (buffer_walkable || !destination_walkable)) {
                     direction = direc_buffer;
                 }
             }
@@ -301,7 +307,7 @@ public:
             eaten       = 3,
         };
     private:
-        // 各種情況的顏色(實作在下方)                                        // 正常身體
+        // 各種情況的顏色(實作在下方)                                      // 正常身體
         static inline const QColor normal_eye   = QColor(255, 255, 255); // 正常眼睛
         static inline const QColor normal_pupil = QColor(33, 33, 255);   // 正常瞳孔
         static inline const QColor scared_body  = QColor(33, 33, 255);   // 驚嚇身體
@@ -318,39 +324,58 @@ public:
         State status = State::normal;           // 狀態
         MainWindow *parent = nullptr;           // 主視窗
         Pos position = Pos(0, 0);               // 自身位置
+        Pos spawn_pos = Pos(0, 0);              // 出生位置
         Direc direction = Direc::none;          // 移動方向
+        int delay_timer = 0;                    // 延遲出鬼門
+        bool gate_walkble = true;               // 能否通過鬼門
+        std::vector<Pos> best_path = {};        // 紀錄最短路徑
         QColor normal_body = QColor(0, 0, 0);   // 正常身體顏色
-        const int ghost_speed = 6;              // 鬼魂移動的速度
-        const int rghost_speed = 4;             // 鬼魂被抓時的移速
+        const int eaten_speed = 4;              // 鬼魂回家的速度
+        const int normal_speed = 6;             // 鬼魂移動的速度
+        const int scared_speed = 4;             // 鬼魂被追逐的速度
         // 虛擬函數
-        inline virtual void init(MainWindow *_parent_, const Pos& pos, const QColor& body_color) noexcept {
-            position = pos;
+        inline virtual void init(
+            const Pos& pos, 
+            MainWindow *_parent_, 
+            const QColor& body_color, 
+            double delay_second,
+            bool born_in_gate
+        ) noexcept {
+            spawn_pos = pos;
             parent = _parent_;
+            position = spawn_pos;
             normal_body = body_color;
+            gate_walkble = born_in_gate;
+            delay_timer = fps * delay_second;
             direction = Direc::left; // 預設方向
         }
-        // 移動方向
-        inline Pos get_move() const noexcept {
-            return get_move_vector(direction);
+        // 取得速度
+        inline constexpr int get_speed() const noexcept {
+            switch(status) {
+                case State::eaten:      {return eaten_speed ;}
+                case State::normal:     {return normal_speed;}
+                case State::scared:     {return scared_speed;}
+                case State::flashing:   {return scared_speed;}
+                default                 {return 0;          }
+            };
         }
         // 方向向量
-        inline constexpr Pos get_move_vector(Direc direc) const noexcept {
+        inline constexpr Pos get_move(Direc direc) const noexcept {
             switch(direc) {
-            case Direc::left:  return Pos(-1, +0);
-            case Direc::right: return Pos(+1, +0);
-            case Direc::up:    return Pos(+0, -1);
-            case Direc::down:  return Pos(+0, +1);
-            default:           return Pos(+0, +0);
+                case Direc::left:  return Pos(-1, +0);
+                case Direc::right: return Pos(+1, +0);
+                case Direc::up:    return Pos(+0, -1);
+                case Direc::down:  return Pos(+0, +1);
+                default:           return Pos(+0, +0);
             }
         }
         // 渲染鬼魂
         inline void draw(QPainter& painter) const {
             // 計算平滑移動比例
-            bool reverse = (parent->state != GameState::normal);
-            const int speed = (reverse ? rghost_speed : ghost_speed);
-            const double ratio = parent->count * (static_cast<double>(speed)/fps);
+            const int speed = get_speed();
+            const double ratio = parent->count % (fps/speed);
             // 計算像素位置
-            const Pos move = get_move();
+            const Pos move = get_move(direction);
             int offset_x = static_cast<double>((move.x * tile_size) * ratio);
             int offset_y = static_cast<double>((move.y * tile_size) * ratio);
             int center_x = position.x * tile_size + (tile_size / 2);
@@ -443,10 +468,69 @@ public:
         // 虛擬函數
         inline Ghost() noexcept = default;
         inline virtual ~Ghost() noexcept = default;
-        inline virtual void update() noexcept { update_status(); }
+        inline virtual update_direction() noexcept;
         // 成員函數
+        inline State get_status() const noexcept { return status; }
+        inline void set_status(State _status_) noexcept { status = _status_; }
         inline bool collides_with(const MainWindow::PacMan& pacman) const noexcept {
             return (position == pacman.get_position());
+        }
+        inline bool can_pass_through(const Pos& pos) const noexcept {
+            if (parent->get_tile(pos) == Tile::gate) return gate_walkble;
+            if (parent->get_tile(pos) == Tile::wall) return false;
+            return true;
+        } 
+        inline void pass_position(const Pos& pos) noexcept {
+            if (parent->get_tile(pos) == Tile::gate) {
+                gate_walkble = false;
+            }
+            position = pos;
+        }
+        inline void BFS_path(const Pos& target) const noexcept {
+            best_path.clear();
+            if (position == target) return;
+            // 轉為 key in unordered_map
+            auto to_key = [](const Pos& p) -> int {
+                return (p.x << 16) | p.y;
+            };
+            // 佇列
+            std::queue<Pos> queue;
+            std::unordered_map<int, Pos> parent_map;
+            // 初始化起點
+            bool found = false;
+            queue.push(position);
+            parent_map[to_key(position)] = position;
+            Direc check_dirs[] = { Direc::left, Direc::right, Direc::up, Direc::down };
+            // 開始 BFS 
+            while (!queue.empty()) {
+                Pos curr = queue.front();
+                queue.pop();
+                // 找到目標提早結束
+                if (curr == target) {
+                    found = true;
+                    break;
+                }
+                // 四個方向
+                for (Direc direc : check_dirs) {
+                    Pos next_pos = curr + get_move(direc);
+                    int next_key = to_key(next_pos);
+                    if (parent_map.find(next_key) == parent_map.end()) {
+                        if (can_pass_through(next_pos)) {
+                            parent_map[next_key] = curr;
+                            queue.push(next_pos);
+                        }
+                    }
+                }
+            }
+            // 找不到路徑
+            if (!found) return;
+            // 反向追蹤回起點
+            Pos trace = target;
+            while (!(trace == position)) {
+                best_path.push_back(trace);
+                trace = parent_map[to_key(trace)];
+            }
+            std::reverse(best_path.begin(), best_path.end());
         }
         inline void update_status() noexcept {
             if (status == State::eaten) return;
@@ -454,13 +538,33 @@ public:
             uint8_t temp = (uint8_t)parent->state;
             status = static_cast<State>(temp);
         }
-        inline State get_status() const noexcept {
-            return status;
+        inline void handle_eaten_direc() noexcept {
+            if (status != State::eaten) return;
+            // 沿著 best_path 的方向走
+            Pos next_step = best_path[0];
+            if (next_step.x < position.x)      direction = Direc::left;
+            else if (next_step.x > position.x) direction = Direc::right;
+            else if (next_step.y < position.y) direction = Direc::up;
+            else if (next_step.y > position.y) direction = Direc::down;
         }
-        inline void set_status(State _status_) noexcept { status = _status_; }
+        // 繪製和更新
         inline void paint(QPainter& painter) {
             if (parent->eaten_ghost_ptr == this) return;
             draw(painter);
+        }
+        inline void update() noexcept {
+            update_status();
+            // 開始移動
+            if (delay_timer == 0) {
+                int speed = get_speed();
+                Pos move = get_move(direction);
+                // 完成循環
+                int count = parent->count%(fps/speed);
+                Pos destination = position + move;
+                if ((count == 0) && can_pass_through(destination)) {
+                    pass_position(destination);
+                }
+            } else { --delay_timer; }
         }
     };
 
