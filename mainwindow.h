@@ -485,9 +485,7 @@ public:
             if (parent->get_tile(pos) == Tile::gate) {
                 gate_walkble = false;
             }
-            if (status == State::eaten) {
-                best_path.erase(best_path.begin());
-            }
+            best_path.erase(best_path.begin());
             position = pos;
         }
         inline void BFS_path(const Pos& target) noexcept {
@@ -596,6 +594,147 @@ public:
             } else { direction = Direc::none; }
         }
     } blinky;
+
+    // 繼承: 粉鬼
+    class Pinky : public Ghost {
+    public:
+        inline Pinky() noexcept : Ghost() {}
+        inline virtual ~Pinky() noexcept override = default;
+        inline void init(MainWindow *_parent_) noexcept {
+            Ghost::init(Pos(9, 3), _parent_, QColor(255, 182, 193), 2.0, true);
+        }
+        inline void update_direction() noexcept override {
+            if (status == State::eaten) {
+                if (!best_path.empty() && position == best_path[0]) {
+                    best_path.erase(best_path.begin());
+                }
+                if (best_path.empty()) {
+                    BFS_path(spawn_pos);
+                }
+                return;
+            }
+            if (status == State::scared || status == State::flashing) {
+                if (!best_path.empty() && position == best_path[0]) {
+                    best_path.erase(best_path.begin());
+                }
+                if (best_path.empty()) {
+                    Pos escape_target;
+                    do {
+                        escape_target.x = rand() % map_width;
+                        escape_target.y = rand() % map_height;
+                    } while (!can_pass_through(escape_target));
+                    
+                    BFS_path(escape_target);
+                }
+            } 
+            // 處理正常狀態：伏擊 PacMan 前方 4 格
+            else {
+                Pos pac_pos = parent->pacman.get_position();
+                Direc pac_dir = parent->pacman.get_direction();
+
+                // 計算前方 4 格的偏移量
+                Pos offset = Pos(0, 0);
+                switch (pac_dir) {
+                    case Direc::left:  offset = Pos(-4,  0); break;
+                    case Direc::right: offset = Pos( 4,  0); break;
+                    case Direc::up:    offset = Pos( 0, -4); break;
+                    case Direc::down:  offset = Pos( 0,  4); break;
+                    default:           offset = Pos( 0,  0); break;
+                }
+
+                Pos target_pos = pac_pos + offset;
+
+                // 嘗試進行伏擊尋路，若目標點在牆內導致 best_path 為空，則直接改追本體
+                BFS_path(target_pos);
+                if (best_path.empty()) {
+                    BFS_path(pac_pos);
+                }
+            }
+
+            // 根據最終算出來的 best_path 分配移動方向
+            if (!best_path.empty()) {
+                Pos next_step = best_path[0];
+                if (next_step.x < position.x)      direction = Direc::left;
+                else if (next_step.x > position.x) direction = Direc::right;
+                else if (next_step.y < position.y) direction = Direc::up;
+                else if (next_step.y > position.y) direction = Direc::down;
+            } else {
+                direction = Direc::none;
+            }
+        }
+    } pinky;
+
+    // 繼承: 青鬼
+    class Inky : public Ghost {
+    public:
+        inline Inky() noexcept : Ghost() {}
+        inline virtual ~Inky() noexcept override = default;
+        inline void init(MainWindow *_parent_) noexcept {
+            Ghost::init(Pos(8, 3), _parent_, QColor(0, 255, 255), 4.0, true);
+        }
+        inline void update_direction() noexcept override {
+            if (status == State::eaten) return;
+            // 計算前方 2 格的基準點
+            Pos pac_pos = parent->pacman.get_position();
+            Direc pac_dir = parent->pacman.get_direction();
+            Pos offset = Pos(0, 0);
+            switch (pac_dir) {
+                case Direc::left:  offset = Pos(-2,  0); break;
+                case Direc::right: offset = Pos( 2,  0); break;
+                case Direc::up:    offset = Pos( 0, -2); break;
+                case Direc::down:  offset = Pos( 0,  2); break;
+                default:           offset = Pos( 0,  0); break;
+            }
+            Pos pivot_pos = pac_pos + offset;
+            Pos blinky_pos = parent->blinky.get_position();
+            // 目標點 = Blinky + 2 * (基準點 - Blinky)
+            Pos target_pos;
+            target_pos.x = blinky_pos.x + 2 * (pivot_pos.x - blinky_pos.x);
+            target_pos.y = blinky_pos.y + 2 * (pivot_pos.y - blinky_pos.y);
+            // 執行 BFS
+            BFS_path(target_pos);
+            if (best_path.empty()) {
+                BFS_path(pac_pos);
+            }
+            // 更新方向
+            if (!best_path.empty()) {
+                Pos next_step = best_path[0];
+                if (next_step.x < position.x)      direction = Direc::left;
+                else if (next_step.x > position.x) direction = Direc::right;
+                else if (next_step.y < position.y) direction = Direc::up;
+                else if (next_step.y > position.y) direction = Direc::down;
+            } else { direction = Direc::none; }
+        }
+    } inky;
+
+    // 繼承: 橘鬼
+    class Clyde : public Ghost {
+    public:
+        inline Clyde() noexcept : Ghost() {}
+        inline virtual ~Clyde() noexcept override = default;
+        inline void init(MainWindow *_parent_) noexcept {
+            Ghost::init(Pos(10, 3), _parent_, QColor(255, 165, 0), 6.0, true);
+        }
+        inline void update_direction() noexcept override {
+            if (status == State::eaten) return;
+            Pos pac_pos = parent->pacman.get_position();
+            // 計算曼哈頓距離
+            int distance = std::abs(position.x - pac_pos.x) + std::abs(position.y - pac_pos.y);
+            // 根據距離決定目標點
+            Pos target_pos;
+            if (distance >= 8) { target_pos = pac_pos; } 
+            else { target_pos = spawn_pos; }
+            // 執行 BFS
+            BFS_path(target_pos);
+            if (!best_path.empty()) {
+                Pos next_step = best_path[0];
+                if (next_step.x < position.x)      direction = Direc::left;
+                else if (next_step.x > position.x) direction = Direc::right;
+                else if (next_step.y < position.y) direction = Direc::up;
+                else if (next_step.y > position.y) direction = Direc::down;
+            } else { direction = Direc::none; }
+        }
+    } clyde;
 
     // 吃掉鬼魂相關資訊
     Pos collision_pos = Pos(0, 0);
