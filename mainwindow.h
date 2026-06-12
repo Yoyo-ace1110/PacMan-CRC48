@@ -269,7 +269,9 @@ public:
             int pacman_count = parent->count % (fps/pacman_speed);
             // 取得目的地
             Pos this_move = get_move(direction);
+            Pos next_move = get_move(direc_buffer);
             Pos destination = position + this_move;
+            Pos next_destination = position + next_move;
             // 完成一周期的循環
             if (pacman_count == 0) {
                 // 嘗試前進一格
@@ -282,7 +284,7 @@ public:
                 }
                 // 更新方向
                 bool buffer_is_not_none = (direc_buffer != Direc::none);
-                bool buffer_walkable = parent->is_walkable(get_move(direc_buffer));
+                bool buffer_walkable = parent->is_walkable(next_destination);
                 bool destination_walkable = parent->is_walkable(destination);
                 if (buffer_is_not_none && (buffer_walkable || !destination_walkable)) {
                     direction = direc_buffer;
@@ -377,7 +379,8 @@ public:
         inline void draw(QPainter& painter) const {
             // 計算平滑移動比例
             const int speed = get_speed();
-            const double ratio = parent->count % (fps/speed);
+            int count = parent->count % (fps/speed);
+            const double ratio = count*(static_cast<double>(speed)/fps);
             // 計算像素位置
             const Pos move = get_move(direction);
             int offset_x = static_cast<double>((move.x * tile_size) * ratio);
@@ -388,43 +391,43 @@ public:
             // 判斷顏色
             QColor body_color, eye_color, pupil_color;
             switch (status) {
-            // 正常狀態
-            case State::normal: {
-                eye_color   = normal_eye;
-                body_color  = normal_body;
-                pupil_color = normal_pupil;
-                break;
-            }
-            // 驚嚇狀態
-            case State::scared: {
-                eye_color   = scared_eye;
-                body_color  = scared_body;
-                pupil_color = scared_pupil;
-                break;
-            }
-            // 閃爍狀態
-            case State::flashing: {
-                int current_msec = QTime::currentTime().msec();
-                bool toggle = (current_msec % 333) < 166;
-                if (toggle) {
-                    body_color  = scared_body;
-                    eye_color   = scared_eye;
-                    pupil_color = scared_pupil;
-                } else {
-                    body_color  = flash_body;
-                    eye_color   = flash_eye;
-                    pupil_color = flash_pupil;
+                // 正常狀態
+                case State::normal: {
+                    eye_color   = normal_eye;
+                    body_color  = normal_body;
+                    pupil_color = normal_pupil;
+                    break;
                 }
-                break;
-            }
-            // 被吃掉了
-            case State::eaten: {
-                body_color  = eaten_body;
-                eye_color   = eaten_eye;
-                pupil_color = eaten_pupil;
-                break;
-            }
-            default: throw std::runtime_error("Unkown status");
+                // 驚嚇狀態
+                case State::scared: {
+                    eye_color   = scared_eye;
+                    body_color  = scared_body;
+                    pupil_color = scared_pupil;
+                    break;
+                }
+                // 閃爍狀態
+                case State::flashing: {
+                    int current_msec = QTime::currentTime().msec();
+                    bool toggle = (current_msec % 333) < 166;
+                    if (toggle) {
+                        body_color  = scared_body;
+                        eye_color   = scared_eye;
+                        pupil_color = scared_pupil;
+                    } else {
+                        body_color  = flash_body;
+                        eye_color   = flash_eye;
+                        pupil_color = flash_pupil;
+                    }
+                    break;
+                }
+                // 被吃掉了
+                case State::eaten: {
+                    body_color  = eaten_body;
+                    eye_color   = eaten_eye;
+                    pupil_color = eaten_pupil;
+                    break;
+                }
+                default: throw std::runtime_error("Unkown status");
             }
             // 繪製身體與眼睛
             painter.setRenderHint(QPainter::Antialiasing);
@@ -487,22 +490,26 @@ public:
             return true;
         } 
         inline void pass_position(const Pos& pos) noexcept {
+            position = pos;
             if (parent->get_tile(pos) == Tile::gate) {
                 gate_walkble = false;
             }
-            best_path.erase(best_path.begin());
-            position = pos;
         }
         inline void BFS_path(const Pos& target) noexcept {
             best_path.clear();
+            Pos safe_target = target;
             if (position == target) return;
+            if (safe_target.x < 0)              safe_target.x = 0;
+            if (safe_target.x >= map_width)     safe_target.x = map_width - 1;
+            if (safe_target.y < 0)              safe_target.y = 0;
+            if (safe_target.y >= map_height)    safe_target.y = map_height - 1;
+            // 佇列
+            std::queue<Pos> queue;
+            std::unordered_map<int, Pos> parent_map;
             // 轉為 key in unordered_map
             auto to_key = [](const Pos& p) -> int {
                 return (p.x << 16) | p.y;
             };
-            // 佇列
-            std::queue<Pos> queue;
-            std::unordered_map<int, Pos> parent_map;
             // 初始化起點
             bool found = false;
             queue.push(position);
@@ -513,26 +520,29 @@ public:
                 Pos curr = queue.front();
                 queue.pop();
                 // 找到目標提早結束
-                if (curr == target) {
+                if (curr == safe_target) {
                     found = true;
                     break;
                 }
                 // 四個方向
                 for (Direc direc : check_dirs) {
                     Pos next_pos = curr + get_move(direc);
+                    // 邊界檢查
+                    bool valid_x = (next_pos.x >= 0 && next_pos.x < map_width);
+                    bool valid_y = (next_pos.y >= 0 && next_pos.y < map_height);
+                    if (!valid_x || !valid_y) continue;
                     int next_key = to_key(next_pos);
-                    if (parent_map.find(next_key) == parent_map.end()) {
-                        if (can_pass_through(next_pos)) {
-                            parent_map[next_key] = curr;
-                            queue.push(next_pos);
-                        }
-                    }
+                    // 尋找下一個目標
+                    if (parent_map.find(next_key) != parent_map.end()) continue;
+                    if (!can_pass_through(next_pos)) continue;
+                    parent_map[next_key] = curr;
+                    queue.push(next_pos);
                 }
             }
             // 找不到路徑
             if (!found) return;
             // 反向追蹤回起點
-            Pos trace = target;
+            Pos trace = safe_target;
             while (!(trace == position)) {
                 best_path.push_back(trace);
                 trace = parent_map[to_key(trace)];
@@ -548,6 +558,7 @@ public:
         inline void handle_eaten_direction() noexcept {
             if (status != State::eaten) return;
             // 沿著 best_path 的方向走
+            BFS_path(spawn_pos);
             Pos next_step = best_path[0];
             if (next_step.x < position.x)      direction = Direc::left;
             else if (next_step.x > position.x) direction = Direc::right;
@@ -561,17 +572,23 @@ public:
         }
         inline void update() noexcept {
             update_status();
-            update_direction();
-            handle_eaten_direction();
             // 開始移動
             if (delay_timer == 0) {
                 int speed = get_speed();
-                Pos move = get_move(direction);
-                // 完成循環
-                int count = parent->count%(fps/speed);
-                Pos destination = position + move;
-                if ((count == 0) && can_pass_through(destination)) {
-                    pass_position(destination);
+                int count = (parent->count)%(fps/speed);
+                if (count == 0) [[unlikely]] {
+                    // 更新方向
+                    if (status != State::eaten) {
+                        update_direction();
+                    } else [[unlikely]] {
+                        handle_eaten_direction();
+                    }
+                    // 完成循環
+                    Pos move = get_move(direction);
+                    Pos destination = position + move;
+                    if (can_pass_through(destination)) {
+                        pass_position(destination);
+                    }
                 }
             } else { --delay_timer; }
         }
@@ -587,8 +604,7 @@ public:
         }
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
-            Pos target_pos = parent->player.get_position();
-            BFS_path(target_pos);
+            BFS_path(parent->player.get_position());
             // 跟著小精靈走
             if (!best_path.empty()) {
                 Pos next_step = best_path[0];
@@ -745,11 +761,11 @@ public:
     Pos collision_pos = Pos(0, 0);
     Ghost* eaten_ghost_ptr = nullptr;
     // 鬼魂指標陣列
-    std::array<Ghost*, 4> ghosts = {
+    std::array<Ghost*, 1> ghosts = {
         &blinky,
-        &pinky,
-        &inky,
-        &clyde
+        // &pinky,
+        // &inky,
+        // &clyde
     };
 
     // 宣告主迴圈
@@ -870,7 +886,7 @@ public:
         }
     }
     // 更新鬼魂們
-    void update_ghosts() const noexcept {
+    void update_ghosts() noexcept {
         for (Ghost* ghost : ghosts) {
             ghost->update();
         }
@@ -906,7 +922,6 @@ public:
             ghost->BFS_path(ghost->get_spawn_pos());
             ghost->set_status(Ghost::State::eaten);
             score += (200 << ghosts_eaten_count++);
-            collision_pos = player.get_pixel_pos();
             eaten_ghost_ptr = ghost;
             freeze_timer = 0.5*fps;
             is_frozen = true;
