@@ -557,8 +557,12 @@ public:
         }
         inline void handle_eaten_direction() noexcept {
             if (status != State::eaten) return;
-            // 沿著 best_path 的方向走
             BFS_path(spawn_pos);
+            if (best_path.empty()) [[unlikely]] {
+                status = State::normal;
+                return;
+            }
+            // 沿著 best_path 的方向走
             Pos next_step = best_path[0];
             if (next_step.x < position.x)      direction = Direc::left;
             else if (next_step.x > position.x) direction = Direc::right;
@@ -566,9 +570,8 @@ public:
             else if (next_step.y > position.y) direction = Direc::down;
         }
         // 繪製和更新
-        inline void paint(QPainter& painter) {
-            if (parent->eaten_ghost_ptr == this) return;
-            draw(painter);
+        inline void paint(QPainter& painter) const {
+            if (!parent->is_frozen) draw(painter);
         }
         inline void update() noexcept {
             update_status();
@@ -584,10 +587,11 @@ public:
                         pass_position(destination);
                     }
                     // 更新方向
+                    if (status == State::eaten) {
+                        handle_eaten_direction();
+                    }
                     if (status != State::eaten) {
                         update_direction();
-                    } else [[unlikely]] {
-                        handle_eaten_direction();
                     }
                 }
             } else { --delay_timer; }
