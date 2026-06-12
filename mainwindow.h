@@ -269,9 +269,9 @@ public:
             int pacman_count = parent->count % (fps/pacman_speed);
             // 取得目的地
             Pos this_move = get_move(direction);
-            Pos next_move = get_move(direc_buffer);
+            // Pos next_move = get_move(direc_buffer);
             Pos destination = position + this_move;
-            Pos next_destination = position + next_move;
+            // Pos next_destination = position + next_move;
             // 完成一周期的循環
             if (pacman_count == 0) {
                 // 嘗試前進一格
@@ -284,9 +284,9 @@ public:
                 }
                 // 更新方向
                 bool buffer_is_not_none = (direc_buffer != Direc::none);
-                bool buffer_walkable = parent->is_walkable(next_destination);
-                bool destination_walkable = parent->is_walkable(destination);
-                if (buffer_is_not_none && (buffer_walkable || !destination_walkable)) {
+                // bool buffer_walkable = parent->is_walkable(next_destination);
+                // bool destination_walkable = parent->is_walkable(destination);
+                if (buffer_is_not_none) { // && (buffer_walkable || !destination_walkable)
                     direction = direc_buffer;
                 }
             }
@@ -301,7 +301,7 @@ public:
         inline constexpr void turn_right() noexcept { this->_turn(Direc::right); }
         inline constexpr void turn_up   () noexcept { this->_turn(Direc::up   ); }
         inline constexpr void turn_down () noexcept { this->_turn(Direc::down ); }
-    } player;
+    } pacman;
 
     // 物件: 鬼魂
     class Ghost {
@@ -350,10 +350,10 @@ public:
             spawn_pos = pos;
             parent = _parent_;
             position = spawn_pos;
+            direction = Direc::none;
             normal_body = body_color;
             gate_walkble = born_in_gate;
             delay_timer = fps * delay_second;
-            direction = Direc::left; // 預設方向
         }
         // 取得速度
         inline constexpr int get_speed() const noexcept {
@@ -577,17 +577,17 @@ public:
                 int speed = get_speed();
                 int count = (parent->count)%(fps/speed);
                 if (count == 0) [[unlikely]] {
-                    // 更新方向
-                    if (status != State::eaten) {
-                        update_direction();
-                    } else [[unlikely]] {
-                        handle_eaten_direction();
-                    }
                     // 完成循環
                     Pos move = get_move(direction);
                     Pos destination = position + move;
                     if (can_pass_through(destination)) {
                         pass_position(destination);
+                    }
+                    // 更新方向
+                    if (status != State::eaten) {
+                        update_direction();
+                    } else [[unlikely]] {
+                        handle_eaten_direction();
                     }
                 }
             } else { --delay_timer; }
@@ -604,7 +604,7 @@ public:
         }
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
-            BFS_path(parent->player.get_position());
+            BFS_path(parent->pacman.get_position());
             // 跟著小精靈走
             if (!best_path.empty()) {
                 Pos next_step = best_path[0];
@@ -650,8 +650,8 @@ public:
             } 
             // 處理正常狀態：伏擊 PacMan 前方 4 格
             else {
-                Pos pac_pos = parent->player.get_position();
-                Direc pac_dir = parent->player.get_direction();
+                Pos pac_pos = parent->pacman.get_position();
+                Direc pac_dir = parent->pacman.get_direction();
 
                 // 計算前方 4 格的偏移量
                 Pos offset = Pos(0, 0);
@@ -696,8 +696,8 @@ public:
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
             // 計算前方 2 格的基準點
-            Pos pac_pos = parent->player.get_position();
-            Direc pac_dir = parent->player.get_direction();
+            Pos pac_pos = parent->pacman.get_position();
+            Direc pac_dir = parent->pacman.get_direction();
             Pos offset = Pos(0, 0);
             switch (pac_dir) {
                 case Direc::left:  offset = Pos(-2,  0); break;
@@ -738,7 +738,7 @@ public:
         }
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
-            Pos pac_pos = parent->player.get_position();
+            Pos pac_pos = parent->pacman.get_position();
             // 計算曼哈頓距離
             int distance = std::abs(position.x - pac_pos.x) + std::abs(position.y - pac_pos.y);
             // 根據距離決定目標點
@@ -902,7 +902,7 @@ public:
     Ghost* collided_ghost() noexcept {
         for (Ghost* ghost : ghosts) {
             bool was_eaten = (ghost->get_status() == Ghost::State::eaten);
-            if (ghost->collides_with(player) && !was_eaten) [[unlikely]] {
+            if (ghost->collides_with(pacman) && !was_eaten) [[unlikely]] {
                 return ghost;
             }
         }
@@ -922,6 +922,7 @@ public:
             ghost->BFS_path(ghost->get_spawn_pos());
             ghost->set_status(Ghost::State::eaten);
             score += (200 << ghosts_eaten_count++);
+            collision_pos = pacman.get_pixel_pos();
             eaten_ghost_ptr = ghost;
             freeze_timer = 0.5*fps;
             is_frozen = true;
