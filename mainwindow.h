@@ -468,8 +468,9 @@ public:
         // 虛擬函數
         inline Ghost() noexcept = default;
         inline virtual ~Ghost() noexcept = default;
-        inline virtual update_direction() noexcept;
+        inline virtual void update_direction() noexcept;
         // 成員函數
+        inline Pos get_spawn_pos() const noexcept { return spawn_pos; }
         inline State get_status() const noexcept { return status; }
         inline void set_status(State _status_) noexcept { status = _status_; }
         inline bool collides_with(const MainWindow::PacMan& pacman) const noexcept {
@@ -486,7 +487,7 @@ public:
             }
             position = pos;
         }
-        inline void BFS_path(const Pos& target) const noexcept {
+        inline void BFS_path(const Pos& target) noexcept {
             best_path.clear();
             if (position == target) return;
             // 轉為 key in unordered_map
@@ -538,7 +539,7 @@ public:
             uint8_t temp = (uint8_t)parent->state;
             status = static_cast<State>(temp);
         }
-        inline void handle_eaten_direc() noexcept {
+        inline void handle_eaten_direction() noexcept {
             if (status != State::eaten) return;
             // 沿著 best_path 的方向走
             Pos next_step = best_path[0];
@@ -546,6 +547,7 @@ public:
             else if (next_step.x > position.x) direction = Direc::right;
             else if (next_step.y < position.y) direction = Direc::up;
             else if (next_step.y > position.y) direction = Direc::down;
+            best_path.erase(best_path.begin());
         }
         // 繪製和更新
         inline void paint(QPainter& painter) {
@@ -554,6 +556,8 @@ public:
         }
         inline void update() noexcept {
             update_status();
+            update_direction();
+            handle_eaten_direction();
             // 開始移動
             if (delay_timer == 0) {
                 int speed = get_speed();
@@ -570,49 +574,25 @@ public:
 
     // 繼承: 紅鬼
     class Blinky : public Ghost {
-    private:
-        // 計算兩點之間的距離平方
-        inline int distance_squared(const Pos& p1, const Pos& p2) const noexcept {
-            int dx = p1.x - p2.x;
-            int dy = p1.y - p2.y;
-            return dx * dx + dy * dy;
-        }
     public:
         inline Blinky() noexcept : Ghost() {}
+        inline virtual ~Blinky() noexcept override = default;
         inline void init(MainWindow *_parent_) noexcept {
-            Ghost::init(_parent_, Pos(9, 1), QColor(255, 0, 0));
+            Ghost::init(Pos(9, 1), _parent_, QColor(255, 0, 0), 0.0, false);
         }
-        inline void update() noexcept override {
-            update_status();
+        inline void update_direction() noexcept override {
+            Pos target_pos = parent->pacman.get_position();
+            BFS_path(target_pos);
+            // 跟著小精靈走
+            if (!best_path.empty()) {
+                Pos next_step = best_path[0];
+                if (next_step.x < position.x)      direction = Direc::left;
+                else if (next_step.x > position.x) direction = Direc::right;
+                else if (next_step.y < position.y) direction = Direc::up;
+                else if (next_step.y > position.y) direction = Direc::down;
+            } else { direction = Direc::none; }
         }
     } blinky;
-
-    // 繼承: 粉鬼
-    class Pinky : public Ghost {
-    public:
-        inline Pinky() noexcept : Ghost() {}
-        inline void init(MainWindow *_parent_) noexcept {
-            Ghost::init(_parent_, Pos(8, 3), QColor(255, 184, 255));
-        }
-    } pinky;
-
-    // 繼承: 青鬼
-    class Inky : public Ghost {
-    public:
-        inline Inky() noexcept : Ghost() {}
-        inline void init(MainWindow *_parent_) noexcept {
-            Ghost::init(_parent_, Pos(9, 3), QColor(0, 255, 255));
-        }
-    } inky;
-
-    // 繼承: 橘鬼
-    class Clyde : public Ghost {
-    public:
-        inline Clyde() noexcept : Ghost() {}
-        inline void init(MainWindow *_parent_) noexcept {
-            Ghost::init(_parent_, Pos(10, 3), QColor(255, 184, 82));
-        }
-    } clyde;
 
     // 吃掉鬼魂相關資訊
     Pos collision_pos = Pos(0, 0);
@@ -776,6 +756,7 @@ public:
             this->close();
         } else [[likely]] {
             // 小精靈把鬼魂吃掉 -> 得分
+            ghost->BFS_path(ghost->get_spawn_pos());
             ghost->set_status(Ghost::State::eaten);
             score += (200 << ghosts_eaten_count++);
             collision_pos = player.get_pixel_pos();
