@@ -485,6 +485,9 @@ public:
             if (parent->get_tile(pos) == Tile::gate) {
                 gate_walkble = false;
             }
+            if (status == State::eaten) {
+                best_path.erase(best_path.begin());
+            }
             position = pos;
         }
         inline void BFS_path(const Pos& target) noexcept {
@@ -547,7 +550,6 @@ public:
             else if (next_step.x > position.x) direction = Direc::right;
             else if (next_step.y < position.y) direction = Direc::up;
             else if (next_step.y > position.y) direction = Direc::down;
-            best_path.erase(best_path.begin());
         }
         // 繪製和更新
         inline void paint(QPainter& painter) {
@@ -581,6 +583,7 @@ public:
             Ghost::init(Pos(9, 1), _parent_, QColor(255, 0, 0), 0.0, false);
         }
         inline void update_direction() noexcept override {
+            if (status == State::eaten) return;
             Pos target_pos = parent->pacman.get_position();
             BFS_path(target_pos);
             // 跟著小精靈走
