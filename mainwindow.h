@@ -935,8 +935,8 @@ public:
             // 小精靈把鬼魂吃掉 -> 得分
             ghost->BFS_path(ghost->get_spawn_pos());
             ghost->set_status(Ghost::State::eaten);
-            score += (200 << ghosts_eaten_count++);
             collision_pos = pacman.get_pixel_pos();
+            score += (200 << ghosts_eaten_count++);
             eaten_ghost_ptr = ghost;
             freeze_timer = 0.5*fps;
             is_frozen = true;
@@ -950,8 +950,9 @@ public:
         int offset = tile_size * 0.75;
         int rect_size = tile_size * 1.5;
         QPoint point = get_point(collision_pos);
+        QString gotten_score = QString::number(200 << (ghosts_eaten_count-1));
         QRect text_rect(point.x()-offset, point.y()-offset, rect_size, rect_size);
-        painter.drawText(text_rect, Qt::AlignCenter, QString::number(200<<ghosts_eaten_count));
+        painter.drawText(text_rect, Qt::AlignCenter, gotten_score);
     }
 };
 
