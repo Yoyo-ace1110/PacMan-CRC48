@@ -21,9 +21,11 @@
 using size_t = std::size_t;
 
 /* TODO:
- * 實作鬼魂出生點
- * 讓四個鬼魂繼承 Ghost
- * 碰撞偵測(小精靈/鬼魂) */
+ * 另外三隻鬼
+ * 小精靈卡牆
+ * 鬼模式切換
+ * 回家後免疫
+ */
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
@@ -172,14 +174,16 @@ public:
         get_tile(pos) = Tile::flat;
     }
     void update_pellet_timer() noexcept {
-        if (pellet_timer > 0) {
-            --pellet_timer;
-            if (pellet_timer  <= 2*fps) [[unlikely]] {
-                set_state_flashing();
-            } else if (pellet_timer == 0) [[unlikely]] {
-                set_state_normal();
-            }
+        if (pellet_timer == 0) [[unlikely]] {
+            // 時間結束恢復正常
+            set_state_normal();
+            return;
         }
+        if (pellet_timer == 2*fps) [[unlikely]] {
+            // 時間剩兩秒閃爍
+            set_state_flashing();
+        }
+        --pellet_timer;
     }
 
     // 物件: 小精靈
@@ -336,9 +340,9 @@ public:
         bool gate_walkble = true;               // 能否通過鬼門
         std::vector<Pos> best_path = {};        // 紀錄最短路徑
         QColor normal_body = QColor(0, 0, 0);   // 正常身體顏色
-        const int eaten_speed = 4;              // 鬼魂回家的速度
+        const int eaten_speed = 12;             // 鬼魂回家的速度
         const int normal_speed = 6;             // 鬼魂移動的速度
-        const int scared_speed = 4;             // 鬼魂被追逐的速度
+        const int scared_speed = 3;             // 鬼魂被追逐的速度
         // 虛擬函數
         inline virtual void init(
             const Pos& pos, 
@@ -482,7 +486,13 @@ public:
         inline State get_status() const noexcept { return status; }
         inline void set_status(State _status_) noexcept { status = _status_; }
         inline bool collides_with(const MainWindow::PacMan& pacman) const noexcept {
-            return (position == pacman.get_position());
+            if (position == pacman.get_position()) return true;
+            Pos ghost_next = position + get_move(direction);
+            Pos pacman_next = pacman.get_position() + pacman.get_move(pacman.get_direction());
+            if (pacman.get_position() == ghost_next && position == pacman_next) {
+                return true;
+            }
+            return false;
         }
         inline bool can_pass_through(const Pos& pos) const noexcept {
             if (parent->get_tile(pos) == Tile::gate) return gate_walkble;
