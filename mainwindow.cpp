@@ -29,31 +29,38 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     timer = new QTimer(this); // 連接到視窗更新
     connect(timer, &QTimer::timeout, this, &MainWindow::main_loop);
     timer->start(1000 / fps); // 每 1/fps 秒更新一次畫面
-    // 建立小精靈
+    // 建立小精靈與鬼魂
     pacman.init(this);
-    // 建立鬼魂
     blinky.init(this);
     pinky.init(this);
     inky.init(this);
     clyde.init(this);
-    // 繪製到螢幕視窗
+    // 重置角色位置並進入等待玩家第一個移動鍵狀態
+    reset_game_positions();
     this->update();
 }
 
 // 更新一次狀態
 void MainWindow::main_loop() {
-    // 定格處理
+    // 1. 等待玩家按下第一個移動鍵 (開局或死亡重置後)
+    if (is_waiting_start) {
+        repaint();
+        return;
+    }
+    // 2. 吃鬼得分定格處理 (僅暫停移動與邏輯，畫面角色維持正常繪製)
     if (is_frozen) [[unlikely]] {
         freeze_timer -= 1;
         if (freeze_timer <= 0) {
             is_frozen = false;
+            eaten_ghost_ptr = nullptr;
         }
         repaint();
         return;
     }
-    // 正常情況
+    // 3. 正常遊戲邏輯
     handle_collision();     // 碰撞偵測
     handle_passed();        // 判斷是否過關
+    update_behavior_mode(); // 更新鬼魂行為模式 (Scatter / Chase)
     update_ghosts();        // 更新鬼魂們
     pacman.update();        // 更新小精靈
     repaint();              // 確保繪製
@@ -69,32 +76,44 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     paint_ghosts(painter);  // 繪製鬼魂們
     pacman.paint(painter);  // 繪製小精靈
     draw_scorebar(painter); // 繪製狀態列
-    // 定格畫面繪製 (得分)
-    if (is_frozen) [[unlikely]] paint_eaten_score(painter);
+    // 吃掉鬼魂且定格時繪製浮動得分
+    if (is_frozen && eaten_ghost_ptr != nullptr) [[unlikely]] {
+        paint_eaten_score(painter);
+    }
 }
 
 // signals
 void MainWindow::keyPressEvent(QKeyEvent *event) {
+    bool move_key_pressed = false;
     switch (event->key()) {
         case Qt::Key_Left:
         case Qt::Key_A:
             pacman.turn_left();
-            return;
+            move_key_pressed = true;
+            break;
         case Qt::Key_Right:
         case Qt::Key_D:
             pacman.turn_right();
-            return;
+            move_key_pressed = true;
+            break;
         case Qt::Key_Up:
         case Qt::Key_W:
             pacman.turn_up();
-            return;
+            move_key_pressed = true;
+            break;
         case Qt::Key_Down:
         case Qt::Key_S:
             pacman.turn_down();
-            return;
+            move_key_pressed = true;
+            break;
         default: {
             QMainWindow::keyPressEvent(event);
             return;
         }
     }
+    // 若處於等待按鍵開始狀態，按下第一個移動鍵即解鎖開始移動
+    if (move_key_pressed && is_waiting_start) {
+        is_waiting_start = false;
+    }
 }
+
