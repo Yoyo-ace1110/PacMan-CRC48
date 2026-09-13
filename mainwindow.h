@@ -153,9 +153,14 @@ public:
         map_boundary_check(pos);
         return map[pos.y][pos.x];
     }
-    bool is_walkable(const Pos& pos) const {
-        bool is_not_wall = (get_tile(pos) != Tile::wall);
-        bool is_not_gate = (get_tile(pos) != Tile::gate);
+    bool is_walkable(const Pos& pos) const noexcept {
+        // 邊界外直接視為不可通行（避免拋出例外）
+        if (pos.x < 0 || pos.x >= (int)map_width ||
+            pos.y < 0 || pos.y >= (int)map_height) {
+            return false;
+        }
+        bool is_not_wall = (map[pos.y][pos.x] != Tile::wall);
+        bool is_not_gate = (map[pos.y][pos.x] != Tile::gate);
         return (is_not_gate && is_not_wall);
     }
     void try_eat_dot(const Pos& pos) {
@@ -271,27 +276,32 @@ public:
         inline void update() {
             // 計算相對於小精靈移動速度的計數器
             int pacman_count = parent->count % (fps/pacman_speed);
-            // 取得目的地
-            Pos this_move = get_move(direction);
-            // Pos next_move = get_move(direc_buffer);
-            Pos destination = position + this_move;
-            // Pos next_destination = position + next_move;
             // 完成一周期的循環
             if (pacman_count == 0) {
-                // 嘗試前進一格
+                Pos this_move = get_move(direction);
+                Pos destination = position + this_move;
+
                 if (parent->is_walkable(destination)) {
+                    // 【情況一】下一格可以通過：先前進、後切換方向
                     position = destination;
-                    // 嘗試把小點點吃掉
                     parent->try_eat_dot(destination);
-                    // 嘗試把小藥丸吃掉
                     parent->try_eat_power_pellet(destination);
-                }
-                // 更新方向
-                bool buffer_is_not_none = (direc_buffer != Direc::none);
-                // bool buffer_walkable = parent->is_walkable(next_destination);
-                // bool destination_walkable = parent->is_walkable(destination);
-                if (buffer_is_not_none) { // && (buffer_walkable || !destination_walkable)
-                    direction = direc_buffer;
+                    // 前進後，確認 buffer 方向從新位置可走才轉向，否則保持原方向
+                    if (direc_buffer != Direc::none) {
+                        Pos buffer_dest = position + get_move(direc_buffer);
+                        if (parent->is_walkable(buffer_dest)) {
+                            direction = direc_buffer;
+                        }
+                    }
+                } else {
+                    // 【情況二】下一格不可通過：停在原地，直接轉向
+                    // get_pixel_pos() 對不可走的方向不產生位移，不會有視覺退格
+                    if (direc_buffer != Direc::none) {
+                        Pos buffer_dest = position + get_move(direc_buffer);
+                        if (parent->is_walkable(buffer_dest)) {
+                            direction = direc_buffer;
+                        }
+                    }
                 }
             }
         }
@@ -315,6 +325,7 @@ public:
             scared      = 1,
             flashing    = 2,
             eaten       = 3,
+            immune      = 4,  // 回家後的免疫狀態
         };
     private:
         // 各種情況的顏色(實作在下方)                                      // 正常身體
@@ -343,6 +354,8 @@ public:
         const int eaten_speed = 12;             // 鬼魂回家的速度
         const int normal_speed = 6;             // 鬼魂移動的速度
         const int scared_speed = 3;             // 鬼魂被追逐的速度
+        int immune_timer = 0;                   // 免疫剩餘幀數
+        static constexpr int immune_duration = 7 * fps; // 免疫時長（與藥丸效果相同）
         // 虛擬函數
         inline virtual void init(
             const Pos& pos, 
@@ -366,6 +379,7 @@ public:
                 case State::normal:     {return normal_speed;}
                 case State::scared:     {return scared_speed;}
                 case State::flashing:   {return scared_speed;}
+                case State::immune:     {return normal_speed;}
                 default:                {return 0;          }
             };
         }
@@ -429,6 +443,13 @@ public:
                     body_color  = eaten_body;
                     eye_color   = eaten_eye;
                     pupil_color = eaten_pupil;
+                    break;
+                }
+                // 免疫狀態：正常外觀帶半透明效果
+                case State::immune: {
+                    eye_color   = normal_eye;
+                    body_color  = QColor(normal_body.red(), normal_body.green(), normal_body.blue(), 128);
+                    pupil_color = normal_pupil;
                     break;
                 }
                 default: throw std::runtime_error("Unkown status");
@@ -561,6 +582,7 @@ public:
         }
         inline void update_status() noexcept {
             if (status == State::eaten) return;
+            if (status == State::immune) return;  // 免疫中，不被全域狀態覆蓋
             // 將主視窗的 GameState 轉為 Ghost::State
             uint8_t temp = (uint8_t)parent->state;
             status = static_cast<State>(temp);
@@ -569,7 +591,10 @@ public:
             if (status != State::eaten) return;
             BFS_path(spawn_pos);
             if (best_path.empty()) [[unlikely]] {
-                status = State::normal;
+                // 回到出生點，進入免疫狀態
+                status = State::immune;
+                immune_timer = immune_duration;
+                direction = Direc::none;
                 return;
             }
             // 沿著 best_path 的方向走
@@ -585,6 +610,15 @@ public:
         }
         inline void update() noexcept {
             update_status();
+            // 免疫倒計時
+            if (status == State::immune) {
+                if (immune_timer > 0) {
+                    --immune_timer;
+                } else {
+                    status = State::normal;
+                    update_status();
+                }
+            }
             // 開始移動
             if (delay_timer == 0) {
                 int speed = get_speed();
@@ -618,8 +652,8 @@ public:
         }
         inline void update_direction() noexcept override {
             if (status == State::eaten) return;
-            BFS_path(parent->pacman.get_position());
             // 跟著小精靈走
+            BFS_path(parent->pacman.get_position());
             if (!best_path.empty()) {
                 Pos next_step = best_path[0];
                 if (next_step.x < position.x)      direction = Direc::left;
@@ -916,7 +950,8 @@ public:
     Ghost* collided_ghost() noexcept {
         for (Ghost* ghost : ghosts) {
             bool was_eaten = (ghost->get_status() == Ghost::State::eaten);
-            if (ghost->collides_with(pacman) && !was_eaten) [[unlikely]] {
+            bool is_immune = (ghost->get_status() == Ghost::State::immune);
+            if (ghost->collides_with(pacman) && !was_eaten && !is_immune) [[unlikely]] {
                 return ghost;
             }
         }
