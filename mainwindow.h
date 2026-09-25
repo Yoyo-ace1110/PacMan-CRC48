@@ -18,7 +18,7 @@
 #include <QThread>          // 暫停時間
 #include <QTimer>           // 計時工具
 #include <QTime>            // 獨立時間
-#include <QRandomGenerator> // 高品質系統亂數種子 generator
+#include <QRandomGenerator> // 亂數種子
 using size_t = std::size_t;
 
 QT_BEGIN_NAMESPACE
@@ -47,7 +47,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 private:
     Ui::MainWindow *ui;
-    QTimer *timer; // 計時器
+    QTimer *timer;
 public:
     // Constructor
     ~MainWindow();
@@ -64,7 +64,7 @@ public:
         power_pellet  = 4,  // 神奇藥丸
     };
 
-    // 鬼魂行為模式 (散開 / 追逐)
+    // 鬼魂行為模式
     enum class BehaviorMode : uint8_t {
         scatter = 0, // 散開模式
         chase   = 1  // 追逐模式
@@ -81,22 +81,23 @@ public:
         { BehaviorMode::scatter, 5 },
         { BehaviorMode::chase,   20 },
         { BehaviorMode::scatter, 5 },
-        { BehaviorMode::chase,   -1 } // -1 代表永久追逐
+        { BehaviorMode::chase,   -1 } // 永久追逐
     };
     size_t phase_index = 0;
-    BehaviorMode behavior_mode = BehaviorMode::scatter; // 預設第一個階段散開
-    int behavior_timer = 7 * fps;                       // 預設第一個階段散開 7 秒
+    // 預設第一個階段散開 7 秒
+    int behavior_timer = 7 * fps;                       
+    BehaviorMode behavior_mode = BehaviorMode::scatter;
 
     // 初始化變數
-    int lives = 3;              // 小精靈生命
-    int count = 0;              // 繪圖計時器
-    int score = 0;              // 累積的分數
-    int dots_amount = 0;        // 剩餘點點的數量
-    int freeze_timer = 0;       // 畫面定格剩餘時間
-    int pellet_timer = 0;       // 藥丸生效剩餘時間
-    bool is_frozen = false;     // 紀錄畫面是否定格
-    bool is_waiting_start = true; // 是否在等待玩家按下第一個移動鍵
-    int ghosts_eaten_count = 0; // 已經吃掉的鬼魂數量
+    int lives = 3;                  // 小精靈生命
+    int count = 0;                  // 繪圖計時器
+    int score = 0;                  // 累積的分數
+    int dots_amount = 0;            // 剩餘點點的數量
+    int freeze_timer = 0;           // 畫面定格剩餘時間
+    int pellet_timer = 0;           // 藥丸生效剩餘時間
+    bool is_frozen = false;         // 紀錄畫面是否定格
+    bool is_waiting_start = true;   // 是否在等待玩家按下移動鍵
+    int ghosts_eaten_count = 0;     // 已經吃掉的鬼魂數量
     GameState state = GameState::normal;  // 遊戲狀態
     static constexpr int tile_size = 30;  // 磁磚大小
     static constexpr int dot_radius = 2;  // 點點半徑
@@ -217,12 +218,10 @@ public:
         --pellet_timer;
     }
     void update_behavior_mode() noexcept {
-        if (state != GameState::normal) return; // 處於驚嚇/閃爍狀態時暫停模式計時器
         if (behavior_timer < 0) return;         // -1 為永久追逐模式，不需更新
-
-        if (behavior_timer > 0) {
-            --behavior_timer;
-        } else {
+        if (state != GameState::normal) return; // 處於驚嚇/閃爍狀態時暫停模式計時器
+        if (behavior_timer > 0) --behavior_timer;
+        else {
             // 切換至下一個階段
             if (phase_index + 1 < phase_schedule.size()) {
                 phase_index++;
@@ -1182,7 +1181,7 @@ public:
     // 吃掉鬼魂相關資訊
     Pos collision_pos = Pos(0, 0);
     Ghost* eaten_ghost_ptr = nullptr;
-    // 鬼魂指標陣列 (包含紅鬼、粉鬼、青鬼、橘鬼)
+    // 鬼魂指標陣列 (紅鬼/粉鬼/青鬼/橘鬼)
     std::array<Ghost*, 4> ghosts = {
         &blinky,
         &pinky,
@@ -1191,9 +1190,7 @@ public:
     };
 
     void trigger_ghosts_u_turn() noexcept {
-        for (Ghost* ghost : ghosts) {
-            ghost->reverse_direction();
-        }
+        for (Ghost* ghost : ghosts) ghost->reverse_direction();
     }
 
     // 宣告主迴圈
@@ -1345,7 +1342,7 @@ public:
         }
         return nullptr;
     }
-    // 重置所有角色與遊戲狀態 (扣命/開始時呼叫)
+    // 重置所有角色與遊戲狀態
     void reset_game_positions() noexcept {
         pacman.reset();
         for (Ghost* ghost : ghosts) {
